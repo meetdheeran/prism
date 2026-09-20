@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.meetdheeran.prism.assistant.PrismSessionService"
+    android:recognitionService="com.meetdheeran.prism.assistant.StubRecognitionService"
+    android:settingsActivity="com.meetdheeran.prism.MainActivity"
+    android:supportsAssist="true"
+    android:supportsLaunchFromKeyguard="true" />
