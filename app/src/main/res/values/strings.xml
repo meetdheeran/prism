@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Working title. The user has not chosen a final name yet; change only this string to rename. -->
+    <string name="app_name">Prism</string>
+</resources>
