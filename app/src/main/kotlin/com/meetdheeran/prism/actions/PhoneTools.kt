@@ -103,7 +103,7 @@ object PhoneTools {
                 "sound" -> Settings.ACTION_SOUND_SETTINGS
                 "battery" -> Intent.ACTION_POWER_USAGE_SUMMARY
                 "apps" -> Settings.ACTION_APPLICATION_SETTINGS
-                "notifications" -> Settings.ACTION_NOTIFICATION_SETTINGS
+                "notifications" -> "android.settings.NOTIFICATION_SETTINGS"
                 "location" -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
                 "security" -> Settings.ACTION_SECURITY_SETTINGS
                 "date_time" -> Settings.ACTION_DATE_SETTINGS

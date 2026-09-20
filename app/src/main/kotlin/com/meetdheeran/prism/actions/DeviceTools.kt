@@ -30,7 +30,7 @@ import kotlinx.serialization.json.put
  * failing that, opens the exact Settings panel so the user is one tap away.
  */
 object DeviceTools {
-    private val torch = Torch()
+    val torch = Torch()
 
     fun all(graph: AppGraph): List<ToolHandler> = listOf(
         tool(

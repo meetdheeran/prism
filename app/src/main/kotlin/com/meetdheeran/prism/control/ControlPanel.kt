@@ -10,6 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -231,7 +232,7 @@ private fun VerticalSlider(backdrop: BackdropState, value: Float, icon: androidx
                     }
                 }
                 .pointerInput(Unit) {
-                    androidx.compose.foundation.gestures.detectTapGestures { p -> onChange(1f - p.y / size.height) }
+                    detectTapGestures(onTap = { p -> onChange(1f - p.y / size.height) })
                 },
         ) {
             Canvas(Modifier.fillMaxSize()) {
