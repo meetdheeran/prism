@@ -95,7 +95,7 @@ class GroqProvider : AiProvider {
         }
         val prepared = prepare(request)
         // Honest, visible notes ("this model can't see images") come before any model text.
-        prepared.notes.forEach { emit(AiEvent.TextDelta("$it\n")) }
+        if (request.messages.lastOrNull()?.role != Role.TOOL) prepared.notes.forEach { emit(AiEvent.TextDelta("$it\n")) }
 
         val http = Request.Builder()
             .url("$BASE_URL/chat/completions")
@@ -244,9 +244,6 @@ class GroqProvider : AiProvider {
             notes += "This Groq model can't see images; switch to the vision model ($VISION_MODEL) in Settings."
         }
         if (imagesToSkip > 0) notes += "Groq accepts up to $MAX_IMAGES images per request, so only the latest $MAX_IMAGES were sent."
-        if (req.webSearch && !search) {
-            notes += "Web search isn't available on this Groq model; switch to $DEFAULT_MODEL for search."
-        }
         var droppedDocuments = false
 
         val messages = buildJsonArray {

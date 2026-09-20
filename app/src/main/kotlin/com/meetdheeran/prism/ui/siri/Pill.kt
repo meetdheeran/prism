@@ -161,7 +161,7 @@ fun ResponseCard(
                 Text(
                     text + if (streaming) " ▍" else "",
                     style = PrismTypography.bodyLarge.copy(lineHeight = 24.sp),
-                    color = if (error != null) PrismColors.Bad else PrismColors.TextPrimary,
+                    color = PrismColors.TextPrimary,
                 )
             }
             if (error != null) {
