@@ -18,6 +18,7 @@ import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.meetdheeran.prism.MainActivity
+import com.meetdheeran.prism.assistant.AssistantLauncher
 import com.meetdheeran.prism.actions.DeviceTools
 import com.meetdheeran.prism.ai.ToolContext
 import com.meetdheeran.prism.core.AppGraph
@@ -150,7 +151,7 @@ class TileControl(private val ctx: Context, private val scope: CoroutineScope) {
                 }.onFailure { message.value = "Screenshot needs Shizuku: ${it.message}" }
             }
             "lock" -> scope.launch { closePanel(); delay(200); ShellCommands.sleep().onFailure { message.value = "Lock needs Shizuku" } }
-            "assistant" -> { closePanel(); launch(Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_ASSISTANT)) }
+            "assistant" -> scope.launch { closePanel(); delay(280); AssistantLauncher.open(ctx) }
             "camera" -> { closePanel(); launch(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)) }
             "calculator" -> { closePanel(); if (!launch(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALCULATOR))) ctx.packageManager.getLaunchIntentForPackage("com.oneplus.calculator")?.let { launch(it) } }
             "settings" -> { closePanel(); launch(Intent(Settings.ACTION_SETTINGS)) }

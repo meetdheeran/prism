@@ -47,6 +47,7 @@ import com.meetdheeran.prism.core.Settings
 import com.meetdheeran.prism.core.VoiceInputMode
 import com.meetdheeran.prism.core.WebSearchMode
 import com.meetdheeran.prism.island.IslandService
+import com.meetdheeran.prism.overlay.BackgroundNotice
 import com.meetdheeran.prism.overlay.OverlayHost
 import com.meetdheeran.prism.shizuku.ShizukuBridge
 import com.meetdheeran.prism.shizuku.ShizukuState
@@ -160,6 +161,16 @@ fun SettingsScreen(nav: NavController) {
             SwitchRow("Calls", checked = settings.islandShowCalls, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowCalls = on) } }
             GlassDivider()
             SwitchRow("Timers & navigation", checked = settings.islandShowTimers, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowTimers = on) } }
+            GlassDivider()
+            TuneRow("Move down", settings.islandOffsetDp, -12, 24) { v -> update { it.copy(islandOffsetDp = v) } }
+            GlassDivider()
+            TuneRow("Wider", settings.islandExtraWidthDp, -20, 60) { v -> update { it.copy(islandExtraWidthDp = v) } }
+            GlassDivider()
+            TuneRow("Taller", settings.islandExtraHeightDp, -10, 24) { v -> update { it.copy(islandExtraHeightDp = v) } }
+        }
+
+        GlassGroup(backdrop, "Background notification", footer = "Android 12 requires one notification while the island or control center runs. Turn its channel off and it disappears; Prism keeps working.") {
+            SettingRow("Hide the 'Prism is running' notification", chevron = true) { BackgroundNotice.openChannelSettings(ctx) }
         }
 
         GlassGroup(backdrop, "Phone") {
@@ -226,4 +237,18 @@ fun SettingsScreen(nav: NavController) {
         "memory" -> ConfirmDialog("Delete all memory?", "The assistant will forget everything it has saved about you.", onConfirm = { scope.launch { graph.memory.deleteAll() } }) { confirm = null }
         "keys" -> ConfirmDialog("Forget API keys?", "Both keys will be erased from the secure store.", "Forget", onConfirm = { SecureStore.clearAll(ctx) }) { confirm = null }
     }
+}
+
+
+/** A labelled integer slider (dp) for the island fine-tune. */
+@Composable
+private fun TuneRow(title: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+    val accent = LocalAccent.current
+    SettingRow(title, value = "$value dp", trailing = {
+        Slider(
+            value.toFloat(), { onChange(it.toInt()) }, valueRange = min.toFloat()..max.toFloat(),
+            modifier = Modifier.width(150.dp),
+            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = 0.2f)),
+        )
+    })
 }

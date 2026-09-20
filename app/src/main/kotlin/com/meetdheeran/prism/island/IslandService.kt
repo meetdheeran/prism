@@ -23,7 +23,9 @@ import androidx.core.content.ContextCompat
 import com.meetdheeran.prism.MainActivity
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.Settings
+import com.meetdheeran.prism.overlay.BackgroundNotice
 import com.meetdheeran.prism.overlay.OverlayHost
+import com.meetdheeran.prism.assistant.AssistantLauncher
 import com.meetdheeran.prism.ui.motion.LocalTilt
 import com.meetdheeran.prism.ui.motion.rememberDeviceTilt
 import com.meetdheeran.prism.ui.theme.PrismTheme
@@ -47,6 +49,9 @@ data class IslandState(
     /** elapsedRealtime when the cable went in; the bloom shows for 3 s after. */
     val chargedAt: Long = 0L,
     val expanded: Boolean = false,
+    /** Collapsed pill size in dp, derived from the real cutout + user fine-tune. */
+    val pillWidthDp: Float = 88f,
+    val pillHeightDp: Float = 38f,
 ) {
     val showChargeBloom: Boolean get() = chargedAt > 0 && SystemClock.elapsedRealtime() - chargedAt < 3_000
     val hasContent: Boolean get() = media != null || activity != null || showChargeBloom
@@ -96,7 +101,7 @@ class IslandService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(NOTIF_ID, notification())
+        BackgroundNotice.start(this)
         if (!OverlayHost.canDrawOverlays(this)) { stopSelf(); return }
         host = OverlayHost(this)
         charging = ChargingWatcher(this).also { it.start() }
@@ -115,9 +120,15 @@ class IslandService : Service() {
                     },
                     battery = bat,
                     chargedAt = if (s.islandShowCharging) at else 0L,
-                )
-            }.collect { next ->
+                    pillWidthDp = cutoutWidthDp() + s.islandExtraWidthDp,
+                    pillHeightDp = cutoutHeightDp() + s.islandExtraHeightDp,
+                ) to s.islandOffsetDp
+            }.collect { (next, offsetDp) ->
+                val newOffset = (offsetDp * resources.displayMetrics.density).toInt()
+                val offsetChanged = newOffset != offsetPx
+                offsetPx = newOffset
                 state.value = next.copy(expanded = state.value.expanded && next.media != null)
+                if (offsetChanged && showing) host?.update(params(state.value.expanded))
                 sync()
                 if (next.showChargeBloom) { delay(3_100); sync() }
             }
@@ -134,8 +145,17 @@ class IslandService : Service() {
         if (s.hasContent && !showing) show() else if (!s.hasContent && showing) hide()
     }
 
+    private var offsetPx = 0
+
+    /** The waterdrop cutout as Android reports it (falls back to the OnePlus 7 numbers). */
+    private fun cutout(): android.graphics.Rect? = runCatching {
+        getSystemService(WindowManager::class.java).currentWindowMetrics.windowInsets.displayCutout?.boundingRectTop
+    }.getOrNull()?.takeIf { !it.isEmpty }
+    private fun cutoutWidthDp(): Float = (cutout()?.width() ?: 180) / resources.displayMetrics.density
+    private fun cutoutHeightDp(): Float = (cutout()?.height() ?: 80) / resources.displayMetrics.density
+
     private fun params(expanded: Boolean): WindowManager.LayoutParams = OverlayHost.params(
-        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL, focusable = false,
+        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL, focusable = false, y = offsetPx,
     ).apply {
         if (expanded) flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
     }
@@ -177,20 +197,7 @@ class IslandService : Service() {
 
     private fun openAssistant() {
         setExpanded(false)
-        startActivity(Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_ASSISTANT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-
-    private fun notification(): Notification {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Dynamic Island", NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) })
-        val pi = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Dynamic Island is on")
-            .setContentText("Music and live activities around the notch")
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentIntent(pi)
-            .setOngoing(true)
-            .build()
+        AssistantLauncher.open(this)
     }
 
     override fun onDestroy() {
@@ -198,11 +205,8 @@ class IslandService : Service() {
         host?.destroy()
         charging?.stop()
         scope.cancel()
+        BackgroundNotice.stop(this)
         super.onDestroy()
     }
 
-    companion object {
-        const val CHANNEL = "island"
-        const val NOTIF_ID = 1101
-    }
 }

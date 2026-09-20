@@ -75,6 +75,10 @@ data class Settings(
     val islandShowCharging: Boolean = true,
     val islandShowCalls: Boolean = true,
     val islandShowTimers: Boolean = true,
+    /** Fine-tune in dp so the pill hugs this phone's notch exactly. */
+    val islandOffsetDp: Int = 2,
+    val islandExtraWidthDp: Int = 24,
+    val islandExtraHeightDp: Int = 10,
     val onboardingDone: Boolean = false,
     val assistantName: String = "Prism",
     val userName: String = "",
@@ -100,6 +104,9 @@ class Prefs(private val ctx: Context) {
         val islandShowCharging = booleanPreferencesKey("island_charging")
         val islandShowCalls = booleanPreferencesKey("island_calls")
         val islandShowTimers = booleanPreferencesKey("island_timers")
+        val islandOffset = intPreferencesKey("island_offset_dp")
+        val islandExtraWidth = intPreferencesKey("island_extra_w_dp")
+        val islandExtraHeight = intPreferencesKey("island_extra_h_dp")
         val onboardingDone = booleanPreferencesKey("onboarding_done")
         val assistantName = stringPreferencesKey("assistant_name")
         val userName = stringPreferencesKey("user_name")
@@ -123,6 +130,9 @@ class Prefs(private val ctx: Context) {
         islandShowCharging = this[K.islandShowCharging] ?: true,
         islandShowCalls = this[K.islandShowCalls] ?: true,
         islandShowTimers = this[K.islandShowTimers] ?: true,
+        islandOffsetDp = this[K.islandOffset] ?: 2,
+        islandExtraWidthDp = this[K.islandExtraWidth] ?: 24,
+        islandExtraHeightDp = this[K.islandExtraHeight] ?: 10,
         onboardingDone = this[K.onboardingDone] ?: false,
         assistantName = this[K.assistantName] ?: "Prism",
         userName = this[K.userName] ?: "",
@@ -152,6 +162,9 @@ class Prefs(private val ctx: Context) {
             p[K.islandShowCharging] = s.islandShowCharging
             p[K.islandShowCalls] = s.islandShowCalls
             p[K.islandShowTimers] = s.islandShowTimers
+            p[K.islandOffset] = s.islandOffsetDp
+            p[K.islandExtraWidth] = s.islandExtraWidthDp
+            p[K.islandExtraHeight] = s.islandExtraHeightDp
             p[K.onboardingDone] = s.onboardingDone
             p[K.assistantName] = s.assistantName
             p[K.userName] = s.userName

@@ -18,7 +18,7 @@ import com.meetdheeran.prism.core.Images
 import com.meetdheeran.prism.core.Settings
 import com.meetdheeran.prism.core.VoiceInputMode
 import com.meetdheeran.prism.data.MessageEntity
-import com.meetdheeran.prism.shizuku.ShizukuBridge
+import com.meetdheeran.prism.assistant.ScreenCapture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -138,11 +138,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun captureScreen() {
         viewModelScope.launch {
-            ShizukuBridge.screenshotPng()
-                .onSuccess { png ->
-                    val jpeg = withContext(Dispatchers.Default) { Images.toJpeg(png) }
-                    if (jpeg != null) { attachments += Attachment("image/jpeg", jpeg, "screenshot"); toast = "Screen captured (not stored)" } else toast = "Could not decode the screenshot"
-                }
+            ScreenCapture.behindPrism(getApplication())
+                .onSuccess { jpeg -> attachments += Attachment("image/jpeg", jpeg, "screenshot"); toast = "Screen captured (not stored)" }
                 .onFailure { toast = "Can't capture: ${it.message}" }
         }
     }

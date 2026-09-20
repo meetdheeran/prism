@@ -6,6 +6,7 @@ import androidx.core.content.ContextCompat
 import com.meetdheeran.prism.control.ControlCenterService
 import com.meetdheeran.prism.island.IslandService
 import kotlinx.coroutines.launch
+import com.meetdheeran.prism.assistant.Foreground
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.island.MediaWatcher
 import com.meetdheeran.prism.shizuku.ShizukuBridge
@@ -13,6 +14,7 @@ import com.meetdheeran.prism.shizuku.ShizukuBridge
 class PrismApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(Foreground)
         val graph = AppGraph.get(this)
         ShizukuBridge.init(this)
         MediaWatcher.start(this)

@@ -88,11 +88,13 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
         state.media != null -> Mode.MEDIA
         else -> Mode.EMPTY
     }
-    val targetW = when (mode) { Mode.EMPTY -> 72.dp; Mode.MEDIA -> 128.dp; Mode.CHARGING -> 150.dp; Mode.CALL, Mode.ACTIVITY -> 170.dp; Mode.EXPANDED -> 348.dp }
-    val targetH = when (mode) { Mode.EXPANDED -> 156.dp; else -> 30.dp }
+    val base = state.pillWidthDp.dp
+    val baseH = state.pillHeightDp.dp
+    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.EXPANDED -> 348.dp }
+    val targetH = when (mode) { Mode.EXPANDED -> 156.dp; else -> baseH }
     val w by animateDpAsState(targetW, Motion.pop(), label = "w")
     val h by animateDpAsState(targetH, Motion.pop(), label = "h")
-    val shape = RoundedCornerShape(if (mode == Mode.EXPANDED) 34.dp else 20.dp)
+    val shape = RoundedCornerShape(if (mode == Mode.EXPANDED) 34.dp else baseH / 2)
 
     Box(Modifier.padding(bottom = 8.dp, start = 8.dp, end = 8.dp)) {
         // The glass needs something to look through; for a black pill that is a black sheet.

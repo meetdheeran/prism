@@ -35,7 +35,11 @@ import com.meetdheeran.prism.core.Images
 import com.meetdheeran.prism.ui.theme.PrismTheme
 
 /** Registered as the phone's digital assistant; the system starts sessions through us. */
-class PrismVoiceInteractionService : VoiceInteractionService()
+class PrismVoiceInteractionService : VoiceInteractionService() {
+    override fun onReady() { super.onReady(); AssistantLauncher.service = this }
+    override fun onShutdown() { if (AssistantLauncher.service === this) AssistantLauncher.service = null; super.onShutdown() }
+    override fun onDestroy() { if (AssistantLauncher.service === this) AssistantLauncher.service = null; super.onDestroy() }
+}
 
 class PrismSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = PrismSession(this)

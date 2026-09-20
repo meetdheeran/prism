@@ -33,6 +33,7 @@ import com.meetdheeran.prism.MainActivity
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.GestureEdge
 import com.meetdheeran.prism.core.Settings
+import com.meetdheeran.prism.overlay.BackgroundNotice
 import com.meetdheeran.prism.overlay.OverlayHost
 import com.meetdheeran.prism.shizuku.ShizukuBridge
 import com.meetdheeran.prism.ui.motion.LocalTilt
@@ -66,7 +67,7 @@ class ControlCenterService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(NOTIF_ID, notification())
+        BackgroundNotice.start(this)
         if (!OverlayHost.canDrawOverlays(this)) { stopSelf(); return }
         handle = OverlayHost(this)
         panel = OverlayHost(this)
@@ -182,33 +183,15 @@ class ControlCenterService : Service() {
         }
     }
 
-    private fun notification(): Notification {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Control center", NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) })
-        val open = PendingIntent.getService(this, 2, Intent(this, ControlCenterService::class.java).setAction("open"), PendingIntent.FLAG_IMMUTABLE)
-        val app = PendingIntent.getActivity(this, 3, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Prism controls are on")
-            .setContentText("Swipe in from the ${settings.gestureEdge.label.lowercase()}")
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setContentIntent(app)
-            .addAction(Notification.Action.Builder(null, "Open", open).build())
-            .setOngoing(true)
-            .build()
-    }
-
     override fun onDestroy() {
         control?.stop()
         panel?.destroy()
         handle?.destroy()
         scope.cancel()
+        BackgroundNotice.stop(this)
         super.onDestroy()
     }
 
-    companion object {
-        const val CHANNEL = "control_center"
-        const val NOTIF_ID = 1102
-    }
 }
 
 @Suppress("unused")

@@ -9,7 +9,7 @@ import com.meetdheeran.prism.ai.ToolHandler
 import com.meetdheeran.prism.ai.ToolResult
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.Images
-import com.meetdheeran.prism.shizuku.ShizukuBridge
+import com.meetdheeran.prism.assistant.ScreenCapture
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -108,10 +108,9 @@ object ContextTools {
             "read_screen",
             "Capture what is currently on the screen (needs Shizuku) and attach it so you can answer questions about it. Call this when the user asks about 'this', 'my screen', 'what am I looking at'.",
         ) { _, ctx ->
-            val png = ShizukuBridge.screenshotPng().getOrElse {
+            val jpeg = ScreenCapture.behindPrism(ctx.app).getOrElse {
                 return@tool failResult("Can't capture the screen: ${it.message}. Shizuku must be running and allowed for Prism.", needs = "shizuku")
             }
-            val jpeg = Images.toJpeg(png) ?: return@tool failResult("Screenshot could not be decoded")
             ctx.attachImage(Attachment("image/jpeg", jpeg, name = "screenshot"))
             okResult("Screenshot attached to this conversation. Describe or answer using it. It is not stored.", userVisible = "Looked at the screen")
         },
