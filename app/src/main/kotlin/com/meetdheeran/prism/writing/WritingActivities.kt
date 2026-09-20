@@ -117,8 +117,7 @@ fun WritingSheet(source: String, readOnly: Boolean, onReplace: (String) -> Unit,
 
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).clickable(remember { MutableInteractionSource() }, null, onClick = onClose))
-        Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, animated = false, intensity = 0.5f) }
-        Box(Modifier.fillMaxSize().background(Color.Transparent))
+        Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, animated = false, intensity = 0.5f, opaque = false) }
         LiquidGlass(backdrop, Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(12.dp), RoundedCornerShape(28.dp), GlassStyle.Dark) {
             Column(Modifier.padding(18.dp)) {
                 Text("Prism writing tools", style = PrismTypography.titleMedium)

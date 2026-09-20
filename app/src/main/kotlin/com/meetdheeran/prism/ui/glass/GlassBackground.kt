@@ -32,6 +32,8 @@ fun GlassBackground(
     accent: Color = PrismColors.DefaultAccent,
     animated: Boolean = true,
     intensity: Float = 1f,
+    /** false = no black base, so the app underneath stays visible (overlays and sheets). */
+    opaque: Boolean = true,
 ) {
     val t by if (animated) {
         rememberInfiniteTransition(label = "bg").animateFloat(
@@ -43,7 +45,7 @@ fun GlassBackground(
     Canvas(
         modifier
             .fillMaxSize()
-            .background(PrismColors.Ink)
+            .then(if (opaque) Modifier.background(PrismColors.Ink) else Modifier)
             .backdropSource(state),
     ) {
         val w = size.width

@@ -162,7 +162,7 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
         // Dim the app underneath just enough for the glass to read; tap to dismiss.
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)).clickable(remember { MutableInteractionSource() }, null, onClick = onClose))
         // Invisible source so the pill/card glass has a backdrop to sample (the app behind is not capturable live).
-        Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, accent = Color(settings.accentArgb), animated = false, intensity = 0.35f) }
+        Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, accent = Color(settings.accentArgb), animated = false, intensity = 0.35f, opaque = false) }
         EdgeGlow(active = true, level = level, phase = phase)
 
         Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Bottom) {

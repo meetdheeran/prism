@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.core.view.doOnLayout
 import com.meetdheeran.prism.MainActivity
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.GestureEdge
@@ -90,7 +91,7 @@ class ControlCenterService : Service() {
         val thick = (10 * d.density).roundToInt()
         val long = (150 * d.density).roundToInt()
         return when (settings.gestureEdge) {
-            GestureEdge.BOTTOM -> OverlayHost.params(width = long, height = thick, gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            GestureEdge.BOTTOM -> OverlayHost.params(width = long, height = thick, gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, y = (18 * d.density).roundToInt())
             GestureEdge.LEFT -> OverlayHost.params(width = thick, height = long, gravity = Gravity.TOP or Gravity.START, y = ((d.heightPixels - long) * settings.gestureHandleFraction).roundToInt())
             GestureEdge.RIGHT -> OverlayHost.params(width = thick, height = long, gravity = Gravity.TOP or Gravity.END, y = ((d.heightPixels - long) * settings.gestureHandleFraction).roundToInt())
         }
@@ -127,6 +128,8 @@ class ControlCenterService : Service() {
                 )
             }
         }
+        // The screen edge is the system back-gesture zone; carve our strip out of it (<= 200 dp is honoured).
+        h.view?.doOnLayout { v -> v.systemGestureExclusionRects = listOf(android.graphics.Rect(0, 0, v.width, v.height)) }
     }
 
     fun openPanel() {
