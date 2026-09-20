@@ -90,14 +90,14 @@ fun SettingsScreen(nav: NavController) {
 
     ScreenScaffold("Settings", onBack = { nav.up() }) { backdrop ->
         GlassGroup(backdrop, "Assistant") {
-            SettingRow("Name", subtitle = "How the assistant refers to itself") {
+            SettingRow("Name", subtitle = "How the assistant refers to itself", trailing = {
                 var name by remember(settings.assistantName) { mutableStateOf(settings.assistantName) }
                 BasicTextField(
                     name, { name = it.take(20); if (it.isNotBlank()) update { s -> s.copy(assistantName = it.trim().take(20)) } },
                     textStyle = PrismTypography.bodyLarge.copy(color = accent), singleLine = true, cursorBrush = SolidColor(accent),
                     modifier = Modifier.width(120.dp),
                 )
-            }
+            })
             GlassDivider()
             Box(Modifier.padding(16.dp)) {
                 Segmented(Provider.entries.map { it.label }, Provider.entries.indexOf(settings.provider)) { i -> update { it.copy(provider = Provider.entries[i]) } }
@@ -134,14 +134,14 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
             GlassDivider()
-            SettingRow("Handle position", subtitle = "Where along the edge the swipe handle sits") {
+            SettingRow("Handle position", subtitle = "Where along the edge the swipe handle sits", trailing = {
                 Slider(
                     settings.gestureHandleFraction, { v -> update { it.copy(gestureHandleFraction = v) } },
                     onValueChangeFinished = { if (settings.controlCenterEnabled) ServiceToggles.controlCenter(ctx, true) },
                     modifier = Modifier.width(150.dp),
                     colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = 0.2f)),
                 )
-            }
+            })
             GlassDivider()
             SettingRow("Edit tiles", subtitle = "Choose and reorder controls", chevron = true) { nav.navigate(Routes.TILES) }
         }

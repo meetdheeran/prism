@@ -56,7 +56,7 @@ fun ScreenScaffold(
     val backdrop = rememberBackdropState()
     val accent = LocalAccent.current
     Box(Modifier.fillMaxSize()) {
-        GlassBackground(backdrop, accent = accent, animated = true, intensity = 0.8f)
+        GlassBackground(backdrop, accent = accent, animated = false, intensity = 0.9f)
         Column(
             Modifier
                 .fillMaxSize()
@@ -93,7 +93,7 @@ fun GlassGroup(backdrop: BackdropState, title: String? = null, footer: String? =
     if (title != null) {
         Text(title.uppercase(), style = PrismTypography.labelSmall, color = PrismColors.TextTertiary, modifier = Modifier.padding(start = 16.dp, bottom = 6.dp))
     }
-    LiquidGlass(backdrop, Modifier.fillMaxWidth(), RoundedCornerShape(22.dp), GlassStyle.Regular) {
+    LiquidGlass(backdrop, Modifier.fillMaxWidth(), RoundedCornerShape(22.dp), GlassStyle.Regular.copy(blurRadius = 16.dp, refraction = 0.04f, elevation = 12.dp)) {
         Column(content = content)
     }
     if (footer != null) {
@@ -115,8 +115,8 @@ fun SettingRow(
     value: String? = null,
     chevron: Boolean = false,
     danger: Boolean = false,
-    onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
 ) {
     val base = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp)
     Row(
@@ -139,7 +139,7 @@ fun SettingRow(
 
 @Composable
 fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
-    SettingRow(title, subtitle, onClick = { if (enabled) onChange(!checked) }) {
+    SettingRow(title, subtitle, onClick = { if (enabled) onChange(!checked) }, trailing = {
         Switch(
             checked = checked, onCheckedChange = onChange, enabled = enabled,
             colors = SwitchDefaults.colors(
@@ -148,7 +148,7 @@ fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean, enabled
                 uncheckedBorderColor = Color.Transparent,
             ),
         )
-    }
+    })
 }
 
 /** iOS-style segmented control. */
