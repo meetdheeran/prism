@@ -1,6 +1,7 @@
 package com.meetdheeran.prism.ui.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -29,6 +30,12 @@ data class LaunchRequest(
 @Composable
 fun PrismNav(startRoute: String, launch: LaunchRequest?, onLaunchConsumed: () -> Unit) {
     val nav = rememberNavController()
+    // A deep link (island long-press, share sheet, writing tools, assistant tile) always lands on the chat.
+    LaunchedEffect(launch?.stamp) {
+        if (launch != null && nav.currentDestination?.route != Routes.HOME && nav.currentDestination?.route != Routes.ONBOARDING) {
+            nav.navigate(Routes.HOME) { popUpTo(Routes.HOME) { inclusive = false }; launchSingleTop = true }
+        }
+    }
     NavHost(nav, startDestination = startRoute) {
         composable(Routes.HOME) { HomeScreen(nav, launch, onLaunchConsumed) }
         composable(Routes.MEMORY) { MemoryScreen(nav) }
