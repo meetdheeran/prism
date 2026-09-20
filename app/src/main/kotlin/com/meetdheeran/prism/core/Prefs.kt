@@ -57,6 +57,16 @@ enum class WebSearchMode(val id: String, val label: String) {
     }
 }
 
+/** How the assistant overlay looks. */
+enum class AssistantStyle(val id: String, val label: String, val note: String) {
+    GLASS("glass", "Glass sheet", "Dimmed screen, glass pill and answer card, edge glow"),
+    EDGE("edge", "Edge glow only (iOS 27)", "Just the coloured ring hugging the screen; your content stays visible");
+
+    companion object {
+        fun from(id: String?): AssistantStyle = entries.firstOrNull { it.id == id } ?: GLASS
+    }
+}
+
 data class Settings(
     val provider: Provider = Provider.GEMINI,
     val geminiModel: String = "",
@@ -67,6 +77,11 @@ data class Settings(
     val accentArgb: Int = 0xFF0A84FF.toInt(),
     val voiceInput: VoiceInputMode = VoiceInputMode.SYSTEM,
     val speakReplies: Boolean = true,
+    /** Keep listening after each answer until the user says stop. */
+    val conversationMode: Boolean = true,
+    val assistantStyle: AssistantStyle = AssistantStyle.GLASS,
+    /** OpenGL lens refraction in the control center. */
+    val glRefraction: Boolean = true,
     val webSearch: WebSearchMode = WebSearchMode.OFF,
     val memoryEnabled: Boolean = true,
     val controlCenterEnabled: Boolean = false,
@@ -96,6 +111,9 @@ class Prefs(private val ctx: Context) {
         val accent = intPreferencesKey("accent_argb")
         val voiceInput = stringPreferencesKey("voice_input")
         val speakReplies = booleanPreferencesKey("speak_replies")
+        val conversationMode = booleanPreferencesKey("conversation_mode")
+        val assistantStyle = stringPreferencesKey("assistant_style")
+        val glRefraction = booleanPreferencesKey("gl_refraction")
         val webSearch = stringPreferencesKey("web_search")
         val memoryEnabled = booleanPreferencesKey("memory_enabled")
         val controlCenterEnabled = booleanPreferencesKey("control_center_enabled")
@@ -122,6 +140,9 @@ class Prefs(private val ctx: Context) {
         accentArgb = this[K.accent] ?: 0xFF0A84FF.toInt(),
         voiceInput = VoiceInputMode.from(this[K.voiceInput]),
         speakReplies = this[K.speakReplies] ?: true,
+        conversationMode = this[K.conversationMode] ?: true,
+        assistantStyle = AssistantStyle.from(this[K.assistantStyle]),
+        glRefraction = this[K.glRefraction] ?: true,
         webSearch = WebSearchMode.from(this[K.webSearch]),
         memoryEnabled = this[K.memoryEnabled] ?: true,
         controlCenterEnabled = this[K.controlCenterEnabled] ?: false,
@@ -154,6 +175,9 @@ class Prefs(private val ctx: Context) {
             p[K.accent] = s.accentArgb
             p[K.voiceInput] = s.voiceInput.id
             p[K.speakReplies] = s.speakReplies
+            p[K.conversationMode] = s.conversationMode
+            p[K.assistantStyle] = s.assistantStyle.id
+            p[K.glRefraction] = s.glRefraction
             p[K.webSearch] = s.webSearch.id
             p[K.memoryEnabled] = s.memoryEnabled
             p[K.controlCenterEnabled] = s.controlCenterEnabled

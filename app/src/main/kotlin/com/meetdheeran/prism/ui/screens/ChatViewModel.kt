@@ -13,6 +13,9 @@ import com.meetdheeran.prism.ai.Citation
 import com.meetdheeran.prism.ai.EngineEvent
 import com.meetdheeran.prism.ai.Providers
 import com.meetdheeran.prism.assistant.SpeechInput
+import com.meetdheeran.prism.assistant.SpeechState
+import com.meetdheeran.prism.assistant.isEndPhrase
+import kotlinx.coroutines.delay
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.Images
 import com.meetdheeran.prism.core.Settings
@@ -63,6 +66,27 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val speech = SpeechInput(app)
     val speaking get() = graph.speechOutput.speaking
 
+    /** Conversation mode: after a spoken answer, listen again until an end phrase or two failed turns. */
+    var conversation by mutableStateOf(false)
+        private set
+    private var awaitListen = false
+    private var voiceErrors = 0
+
+    init {
+        viewModelScope.launch {
+            graph.speechOutput.speaking.collect { sp -> if (!sp && awaitListen) { awaitListen = false; delay(300); if (conversation) startVoice(continuing = true) } }
+        }
+        viewModelScope.launch {
+            speech.state.collect { st ->
+                if (st is SpeechState.Error && conversation) {
+                    if (++voiceErrors >= 2) endConversation() else { delay(700); if (conversation) startVoice(continuing = true) }
+                } else if (st is SpeechState.Result) voiceErrors = 0
+            }
+        }
+    }
+
+    fun endConversation() { conversation = false; awaitListen = false; voiceErrors = 0; speech.cancel() }
+
     private var job: Job? = null
     val busy: Boolean get() = draft != null && draft?.error == null
 
@@ -94,8 +118,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     is EngineEvent.Remembered -> draft = d.copy(chips = d.chips + "Saved to memory")
                     is EngineEvent.Done -> {
                         _conversationId.value = ev.conversationId
-                        if (settings.value.speakReplies && ev.fullText.isNotBlank()) graph.speechOutput.speak(ev.fullText)
+                        val speak = settings.value.speakReplies && ev.fullText.isNotBlank()
+                        if (speak) graph.speechOutput.speak(ev.fullText)
                         draft = null
+                        if (conversation) { if (speak) awaitListen = true else { delay(300); startVoice(continuing = true) } }
                     }
                     is EngineEvent.Error -> {
                         ev.conversationId?.let { _conversationId.value = it }
@@ -117,23 +143,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         graph.speechOutput.stop()
         draft = null
         pendingConfirmation = null
+        awaitListen = false
     }
 
     fun dismissError() { if (draft?.error != null) draft = null }
 
-    fun startVoice() {
+    fun startVoice(continuing: Boolean = false) {
         graph.speechOutput.stop()
         val s = settings.value
+        if (s.conversationMode) conversation = true
         val transcriber: (suspend (ByteArray) -> Result<String>?)? = if (s.voiceInput == VoiceInputMode.SYSTEM) null else { wav ->
             val provider = if (s.voiceInput == VoiceInputMode.GROQ_WHISPER) Providers.groq() else Providers.gemini()
             val key = Providers.apiKey(getApplication(), provider.provider)
             if (key == null) Result.failure(IllegalStateException(Providers.missingKeyMessage(provider.provider)))
             else provider.transcribe(key, wav)
         }
-        speech.start(s.voiceInput, onFinal = { text -> if (text.isNotBlank()) send(text) }, transcribe = transcriber)
+        speech.start(s.voiceInput, onFinal = { text -> if (conversation && isEndPhrase(text)) { endConversation(); toast = "Okay." } else if (text.isNotBlank()) send(text) }, transcribe = transcriber)
     }
 
-    fun stopVoice() = speech.stop()
+    fun stopVoice() { if (conversation) endConversation() else speech.stop() }
     fun stopSpeaking() = graph.speechOutput.stop()
 
     fun captureScreen() {

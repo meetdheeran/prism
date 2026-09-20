@@ -63,6 +63,8 @@ data class GlassStyle(
     val refraction: Float = 0.07f,
     val innerShadowAlpha: Float = 0.18f,
     val elevation: Dp = 18.dp,
+    /** true = draw nothing behind the content (an OpenGL lens already shows the backdrop). */
+    val backdropless: Boolean = false,
 ) {
     companion object {
         val Regular = GlassStyle()
@@ -184,7 +186,9 @@ private class GlassNode(var state: BackdropState, var shape: Shape, var style: G
         val w = size.width
         val h = size.height
 
-        if (src != null && bl != null && w > 0f && h > 0f) {
+        if (style.backdropless) {
+            // The refraction surface underneath already shows what is behind this pane.
+        } else if (src != null && bl != null && w > 0f && h > 0f) {
             val r = style.blurRadius.toPx()
             val pad = ceil(r * 2f).toInt()
             bl.renderEffect = effectFor(r)

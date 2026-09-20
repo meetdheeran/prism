@@ -60,6 +60,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.navigation.NavController
 import com.meetdheeran.prism.assistant.SpeechState
 import com.meetdheeran.prism.core.Provider
@@ -98,6 +100,8 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::addUri) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::addUri) }
+    val cameraUri = remember { mutableStateOf<Uri?>(null) }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) cameraUri.value?.let(vm::addUri) }
 
     LaunchedEffect(launch?.stamp) {
         val l = launch ?: return@LaunchedEffect
@@ -181,6 +185,11 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
                 }
             }
 
+            if (vm.conversation) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp), horizontalArrangement = Arrangement.Center) {
+                    Chip("Conversation on \u00B7 tap to end", accent = true) { vm.endConversation() }
+                }
+            }
             // Input
             Box(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                 ListeningPill(
@@ -203,6 +212,13 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
                             DropdownMenu(attachMenu, { attachMenu = false }, modifier = Modifier.background(PrismColors.Slate)) {
                                 DropdownMenuItem({ Text("Photo", color = PrismColors.TextPrimary) }, { attachMenu = false; pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
                                 DropdownMenuItem({ Text("PDF or text file", color = PrismColors.TextPrimary) }, { attachMenu = false; pickFile.launch(arrayOf("application/pdf", "text/plain", "text/markdown")) })
+                                DropdownMenuItem({ Text("Take a photo and ask", color = PrismColors.TextPrimary) }, {
+                                    attachMenu = false
+                                    val f = File(ctx.cacheDir, "camera/shot.jpg").apply { parentFile?.mkdirs() }
+                                    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+                                    cameraUri.value = uri
+                                    runCatching { takePhoto.launch(uri) }.onFailure { vm.toast = "No camera app available" }
+                                })
                                 DropdownMenuItem(
                                     { Text(if (ShizukuBridge.isReady()) "Capture screen" else "Capture screen (needs Shizuku)", color = PrismColors.TextPrimary) },
                                     { attachMenu = false; vm.captureScreen() },

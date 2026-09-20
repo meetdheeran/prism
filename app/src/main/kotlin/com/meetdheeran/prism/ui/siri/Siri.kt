@@ -69,7 +69,7 @@ fun EdgeGlow(
         0f, 1f, infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breath",
     )
     val target = when (phase) {
-        Phase.Listening -> 0.15f + 0.85f * level.coerceIn(0f, 1f)
+        Phase.Listening -> 0.10f + 0.14f * breath + 0.80f * level.coerceIn(0f, 1f)
         Phase.Thinking -> 0.35f + 0.3f * breath
         Phase.Speaking -> 0.25f + 0.5f * level.coerceIn(0f, 1f)
         Phase.Idle -> 0.12f

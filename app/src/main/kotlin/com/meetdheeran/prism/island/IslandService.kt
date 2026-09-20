@@ -41,6 +41,11 @@ import kotlinx.coroutines.launch
 
 data class BatteryInfo(val percent: Int = -1, val charging: Boolean = false)
 
+/** A 3-second pop: low battery, Wi-Fi or Bluetooth connected. */
+data class IslandEvent(val kind: Kind, val text: String, val at: Long) {
+    enum class Kind { BATTERY_LOW, WIFI, BLUETOOTH }
+}
+
 /** What the island is showing. One "focus" at a time, priority: call > charging bloom > timer/nav > media. */
 data class IslandState(
     val media: NowPlaying? = null,
@@ -52,9 +57,11 @@ data class IslandState(
     /** Collapsed pill size in dp, derived from the real cutout + user fine-tune. */
     val pillWidthDp: Float = 88f,
     val pillHeightDp: Float = 38f,
+    val event: IslandEvent? = null,
 ) {
     val showChargeBloom: Boolean get() = chargedAt > 0 && SystemClock.elapsedRealtime() - chargedAt < 3_000
-    val hasContent: Boolean get() = media != null || activity != null || showChargeBloom
+    val showEvent: Boolean get() = event != null && SystemClock.elapsedRealtime() - event.at < 3_500
+    val hasContent: Boolean get() = media != null || activity != null || showChargeBloom || showEvent
 }
 
 /** Battery broadcasts as flows. */
@@ -94,6 +101,9 @@ class IslandService : Service() {
     private var host: OverlayHost? = null
     private var charging: ChargingWatcher? = null
     private val state = MutableStateFlow(IslandState())
+    private val events = MutableStateFlow<IslandEvent?>(null)
+    private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private var btReceiver: BroadcastReceiver? = null
     private var collapseJob: Job? = null
     private var showing = false
 
@@ -108,6 +118,33 @@ class IslandService : Service() {
         MediaWatcher.start(this)
         val graph = AppGraph.get(this)
         val ch = charging!!
+        // Low battery: one pop when crossing 15% while unplugged.
+        scope.launch {
+            var wasLow = false
+            ch.info.collect { b ->
+                val low = b.percent in 1..15 && !b.charging
+                if (low && !wasLow) events.value = IslandEvent(IslandEvent.Kind.BATTERY_LOW, "Battery low \u00B7 ${b.percent}%", SystemClock.elapsedRealtime())
+                wasLow = low
+            }
+        }
+        // Wi-Fi joined (ignore the callback that fires for an already-connected network at registration).
+        val startedAt = SystemClock.elapsedRealtime()
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        wifiCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                if (SystemClock.elapsedRealtime() - startedAt > 3_000) events.value = IslandEvent(IslandEvent.Kind.WIFI, "Wi-Fi connected", SystemClock.elapsedRealtime())
+            }
+        }
+        runCatching { cm.registerNetworkCallback(android.net.NetworkRequest.Builder().addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI).build(), wifiCallback!!) }
+        // Bluetooth device connected.
+        btReceiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                @Suppress("DEPRECATION") val dev = i.getParcelableExtra<android.bluetooth.BluetoothDevice>(android.bluetooth.BluetoothDevice.EXTRA_DEVICE)
+                val name = runCatching { dev?.name }.getOrNull().orEmpty()
+                events.value = IslandEvent(IslandEvent.Kind.BLUETOOTH, if (name.isBlank()) "Bluetooth connected" else "Connected \u00B7 $name", SystemClock.elapsedRealtime())
+            }
+        }
+        ContextCompat.registerReceiver(this, btReceiver!!, IntentFilter(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED), ContextCompat.RECEIVER_EXPORTED)
         scope.launch {
             combine(graph.prefs.settings, MediaWatcher.now, PrismNotificationListener.activities, ch.info, ch.connectedAt) { s: Settings, np, acts, bat, at ->
                 IslandState(
@@ -123,14 +160,14 @@ class IslandService : Service() {
                     pillWidthDp = cutoutWidthDp() + s.islandExtraWidthDp,
                     pillHeightDp = cutoutHeightDp() + s.islandExtraHeightDp,
                 ) to s.islandOffsetDp
-            }.collect { (next, offsetDp) ->
+            }.combine(events) { (st, off), ev -> st.copy(event = ev) to off }.collect { (next, offsetDp) ->
                 val newOffset = (offsetDp * resources.displayMetrics.density).toInt()
                 val offsetChanged = newOffset != offsetPx
                 offsetPx = newOffset
                 state.value = next.copy(expanded = state.value.expanded && next.media != null)
                 if (offsetChanged && showing) host?.update(params(state.value.expanded))
                 sync()
-                if (next.showChargeBloom) { delay(3_100); sync() }
+                if (next.showChargeBloom || next.showEvent) { delay(3_600); sync() }
             }
         }
     }
@@ -204,6 +241,8 @@ class IslandService : Service() {
         hide()
         host?.destroy()
         charging?.stop()
+        wifiCallback?.let { runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
+        btReceiver?.let { runCatching { unregisterReceiver(it) } }
         scope.cancel()
         BackgroundNotice.stop(this)
         super.onDestroy()

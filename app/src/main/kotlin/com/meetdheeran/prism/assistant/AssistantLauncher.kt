@@ -70,3 +70,9 @@ object ScreenCapture {
         return png.mapCatching { Images.toJpeg(it) ?: throw IllegalStateException("Screenshot could not be decoded") }
     }
 }
+
+
+private val END_PHRASES = Regex("^(stop|that'?s (all|it)|thanks?( you| a lot)?|thank you|ok(ay)? thanks|bye|goodbye|nothing( else)?|no(pe)?|done|cancel|never ?mind)[.! ]*$", RegexOption.IGNORE_CASE)
+
+/** "Stop", "that's all", "thanks" … end a conversation instead of being sent to the model. */
+fun isEndPhrase(text: String): Boolean = END_PHRASES.matches(text.trim())

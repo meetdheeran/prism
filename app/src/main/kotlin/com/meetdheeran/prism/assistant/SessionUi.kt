@@ -54,6 +54,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
+import com.meetdheeran.prism.core.AssistantStyle
+import com.meetdheeran.prism.ui.glass.GlassStyle
+import com.meetdheeran.prism.ui.glass.backdropSource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.Arrangement
+import com.meetdheeran.prism.ui.theme.PrismTypography
 import kotlinx.coroutines.launch
 
 /** State for one assist session (no ViewModel: sessions live in a service, not an Activity). */
@@ -74,6 +81,12 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
     val speech = SpeechInput(ctx)
     private var job: Job? = null
     private var screenshotUsed = false
+    var onEnd: (() -> Unit)? = null
+    private var awaitListen = false
+
+    init {
+        scope.launch { graph.speechOutput.speaking.collect { sp -> if (!sp && awaitListen) { awaitListen = false; delay(300); listen() } } }
+    }
 
     fun begin(autoListen: Boolean) {
         response = ""; error = null; chips = emptyList(); citations = emptyList(); input = ""; streaming = false
@@ -89,6 +102,7 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
     }
 
     fun end() {
+        awaitListen = false
         speech.cancel()
         job?.cancel()
         graph.speechOutput.stop()
@@ -102,7 +116,7 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
             val key = Providers.apiKey(ctx, p.provider)
             if (key == null) Result.failure(IllegalStateException(Providers.missingKeyMessage(p.provider))) else p.transcribe(key, wav)
         }
-        speech.start(s.voiceInput, onFinal = { if (it.isNotBlank()) send(it) }, transcribe = transcriber)
+        speech.start(s.voiceInput, onFinal = { if (isEndPhrase(it)) onEnd?.invoke() else if (it.isNotBlank()) send(it) }, transcribe = transcriber)
     }
 
     private val screenWords = Regex("\\b(screen|this|here|see|look|page|photo|image|picture|read|what'?s on|showing|displayed|text)\\b", RegexOption.IGNORE_CASE)
@@ -131,7 +145,12 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
                     is EngineEvent.NeedsConfirmation -> pending = ev
                     is EngineEvent.Citations -> citations = ev.items
                     is EngineEvent.Remembered -> chips = chips + "Saved to memory"
-                    is EngineEvent.Done -> { conversationId = ev.conversationId; streaming = false; if (settings.value.speakReplies) graph.speechOutput.speak(ev.fullText) }
+                    is EngineEvent.Done -> {
+                        conversationId = ev.conversationId; streaming = false
+                        val speak = settings.value.speakReplies && ev.fullText.isNotBlank()
+                        if (speak) graph.speechOutput.speak(ev.fullText)
+                        if (settings.value.conversationMode) { if (speak) awaitListen = true else { delay(300); listen() } }
+                    }
                     is EngineEvent.Error -> { error = ev.message; streaming = false }
                 }
             }
@@ -145,7 +164,8 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
 fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
     val backdrop = rememberBackdropState()
     val speech by model.speech.state.collectAsState()
-    val speaking by AppGraph.get(androidx.compose.ui.platform.LocalContext.current).speechOutput.speaking.collectAsState()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val speaking by AppGraph.get(ctx).speechOutput.speaking.collectAsState()
     val listening = speech is SpeechState.Listening
     val level = (speech as? SpeechState.Listening)?.level ?: 0f
     val phase = when {
@@ -156,16 +176,19 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
     }
     val settingsState: State<Settings> = model.settings
     val settings by settingsState
-    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val edgeOnly = settings.assistantStyle == AssistantStyle.EDGE
+    var keyboard by remember { mutableStateOf(false) }
+    val partial = (speech as? SpeechState.Listening)?.partial.orEmpty()
+    val cardStyle = if (edgeOnly) GlassStyle.Dark.copy(tintAlpha = 0.62f) else GlassStyle.Dark
 
     Box(Modifier.fillMaxSize()) {
-        // Dim the app underneath just enough for the glass to read; tap to dismiss.
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)).clickable(remember { MutableInteractionSource() }, null, onClick = onClose))
-        // Invisible source so the pill/card glass has a backdrop to sample (the app behind is not capturable live).
-        Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, accent = Color(settings.accentArgb), animated = false, intensity = 0.35f, opaque = false) }
+        // iOS-27 style keeps the app readable: barely any dimming, no sheet, just the ring of light.
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (edgeOnly) 0.06f else 0.25f)).clickable(remember { MutableInteractionSource() }, null, onClick = onClose))
+        if (edgeOnly) Box(Modifier.fillMaxSize().backdropSource(backdrop))
+        else Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, accent = Color(settings.accentArgb), animated = false, intensity = 0.35f, opaque = false) }
         EdgeGlow(active = true, level = level, phase = phase)
 
-        Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Bottom) {
+        Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.Bottom) {
             AnimatedVisibility(model.response.isNotEmpty() || model.streaming || model.error != null, enter = fadeIn(Motion.fade()) + slideInVertically(Motion.panel()) { it / 3 }, exit = fadeOut(Motion.fade())) {
                 Column {
                     ResponseCard(backdrop, model.response, model.streaming, citations = model.citations, chips = model.chips, error = model.error) { url ->
@@ -185,23 +208,43 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
             }
             (speech as? SpeechState.Error)?.let { e ->
-                Text(e.message, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                Text(e.message, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             }
-            ListeningPill(
-                backdrop = backdrop,
-                text = if (listening) (speech as SpeechState.Listening).partial.ifEmpty { model.input } else model.input,
-                onTextChange = { model.input = it },
-                onSend = { model.send(model.input) },
-                onMic = { model.listen() },
-                onStop = { model.speech.stop() },
-                listening = listening,
-                level = level,
-                processing = speech is SpeechState.Processing,
-                placeholder = "Ask ${settings.assistantName}…",
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
-                Chip("Open ${settings.assistantName}") { onOpenApp() }
+            if (edgeOnly && !keyboard) {
+                // Transcript floats over the app; no pill until the keyboard is asked for.
+                val line = when {
+                    listening -> partial.ifEmpty { "Listening\u2026" }
+                    phase == Phase.Thinking -> "Thinking\u2026"
+                    else -> ""
+                }
+                if (line.isNotEmpty()) {
+                    Text(line, style = PrismTypography.titleMedium, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Chip(if (listening) "Stop" else "Talk", accent = listening) { if (listening) model.speech.stop() else model.listen() }
+                    Spacer(Modifier.width(8.dp))
+                    Chip("Keyboard") { keyboard = true }
+                    Spacer(Modifier.width(8.dp))
+                    Chip("Open ${settings.assistantName}") { onOpenApp() }
+                }
+            } else {
+                ListeningPill(
+                    backdrop = backdrop,
+                    text = if (listening) partial.ifEmpty { model.input } else model.input,
+                    onTextChange = { model.input = it },
+                    onSend = { model.send(model.input) },
+                    onMic = { model.listen() },
+                    onStop = { model.speech.stop() },
+                    listening = listening,
+                    level = level,
+                    processing = speech is SpeechState.Processing,
+                    placeholder = "Ask ${settings.assistantName}\u2026",
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Chip("Open ${settings.assistantName}") { onOpenApp() }
+                    if (edgeOnly) { Spacer(Modifier.width(8.dp)); Chip("Hide keyboard") { keyboard = false } }
+                }
             }
         }
     }

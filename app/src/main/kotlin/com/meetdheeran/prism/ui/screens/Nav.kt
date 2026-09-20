@@ -15,6 +15,7 @@ object Routes {
     const val KEYS = "keys"
     const val PERMISSIONS = "permissions"
     const val TILES = "tiles"
+    const val REMINDERS = "reminders"
     const val ONBOARDING = "onboarding"
 }
 
@@ -43,6 +44,7 @@ fun PrismNav(startRoute: String, launch: LaunchRequest?, onLaunchConsumed: () ->
         composable(Routes.KEYS) { KeysScreen(nav) }
         composable(Routes.PERMISSIONS) { PermissionsScreen(nav) }
         composable(Routes.TILES) { TilesEditorScreen(nav) }
+        composable(Routes.REMINDERS) { RemindersScreen(nav) }
         composable(Routes.ONBOARDING) {
             OnboardingScreen(nav) {
                 nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }

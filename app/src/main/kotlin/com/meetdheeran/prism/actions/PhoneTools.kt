@@ -14,6 +14,7 @@ import com.meetdheeran.prism.ai.ToolRegistry
 import com.meetdheeran.prism.ai.ToolResult
 import com.meetdheeran.prism.ai.ToolSpec
 import com.meetdheeran.prism.core.AppGraph
+import com.meetdheeran.prism.reminders.ReminderTools
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -52,6 +53,7 @@ object PhoneTools {
         registry.register(*navigation().toTypedArray())
         registry.register(*DeviceTools.all(graph).toTypedArray())
         registry.register(*ContextTools.all(graph).toTypedArray())
+        registry.register(*ReminderTools.all(graph).toTypedArray())
     }
 
     private fun apps(graph: AppGraph): List<ToolHandler> = listOf(

@@ -33,6 +33,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.BatteryAlert
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.MusicNote
@@ -83,6 +86,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     val mode = when {
         state.expanded && state.media != null -> Mode.EXPANDED
         state.activity?.kind == LiveActivity.Kind.CALL -> Mode.CALL
+        state.showEvent -> Mode.EVENT
         state.showChargeBloom -> Mode.CHARGING
         state.activity != null -> Mode.ACTIVITY
         state.media != null -> Mode.MEDIA
@@ -90,7 +94,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     }
     val base = state.pillWidthDp.dp
     val baseH = state.pillHeightDp.dp
-    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.EXPANDED -> 348.dp }
+    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.EXPANDED -> 348.dp }
     val targetH = when (mode) { Mode.EXPANDED -> 156.dp; else -> baseH }
     val w by animateDpAsState(targetW, Motion.pop(), label = "w")
     val h by animateDpAsState(targetH, Motion.pop(), label = "h")
@@ -116,6 +120,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
                     Mode.EMPTY -> Box(Modifier.fillMaxSize())
                     Mode.MEDIA -> state.media?.let { Collapsed(it) }
                     Mode.CHARGING -> Charging(state.battery)
+                    Mode.EVENT -> state.event?.let { EventRow(it) }
                     Mode.CALL -> state.activity?.let { CallRow(it) }
                     Mode.ACTIVITY -> state.activity?.let { ActivityRow(it) }
                     Mode.EXPANDED -> state.media?.let { Expanded(it) }
@@ -125,7 +130,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     }
 }
 
-private enum class Mode { EMPTY, MEDIA, CHARGING, CALL, ACTIVITY, EXPANDED }
+private enum class Mode { EMPTY, MEDIA, CHARGING, EVENT, CALL, ACTIVITY, EXPANDED }
 
 @Composable
 private fun Collapsed(np: NowPlaying) {
@@ -170,6 +175,20 @@ private fun Charging(b: BatteryInfo) {
         Text("Charging", style = PrismTypography.labelMedium, color = Color.White)
         Spacer(Modifier.weight(1f))
         Text(if (b.percent >= 0) "${b.percent}%" else "", style = PrismTypography.labelMedium, color = PrismColors.Good)
+    }
+}
+
+@Composable
+private fun EventRow(e: IslandEvent) {
+    val (icon, tint) = when (e.kind) {
+        IslandEvent.Kind.BATTERY_LOW -> Icons.Rounded.BatteryAlert to PrismColors.Bad
+        IslandEvent.Kind.WIFI -> Icons.Rounded.Wifi to PrismColors.SiriCyan
+        IslandEvent.Kind.BLUETOOTH -> Icons.Rounded.Bluetooth to PrismColors.SiriBlue
+    }
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(e.text, style = PrismTypography.labelMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

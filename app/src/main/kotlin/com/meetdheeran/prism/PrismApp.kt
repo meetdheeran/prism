@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.meetdheeran.prism.control.ControlCenterService
 import com.meetdheeran.prism.island.IslandService
+import com.meetdheeran.prism.reminders.ReminderScheduler
 import kotlinx.coroutines.launch
 import com.meetdheeran.prism.assistant.Foreground
 import com.meetdheeran.prism.core.AppGraph
@@ -20,6 +21,7 @@ class PrismApp : Application() {
         MediaWatcher.start(this)
         // Overlay services the user left on come back with the app (they die with the process on reinstall).
         graph.scope.launch {
+            runCatching { ReminderScheduler.rescheduleAll(this@PrismApp) }
             val s = graph.prefs.current()
             runCatching {
                 if (s.controlCenterEnabled) ContextCompat.startForegroundService(this@PrismApp, Intent(this@PrismApp, ControlCenterService::class.java).setAction("start"))

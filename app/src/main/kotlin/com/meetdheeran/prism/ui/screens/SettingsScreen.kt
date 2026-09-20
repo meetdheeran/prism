@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Security
@@ -40,6 +41,7 @@ import com.meetdheeran.prism.ai.Providers
 import com.meetdheeran.prism.assistant.SpeechOutput
 import com.meetdheeran.prism.control.ControlCenterService
 import com.meetdheeran.prism.core.AppGraph
+import com.meetdheeran.prism.core.AssistantStyle
 import com.meetdheeran.prism.core.GestureEdge
 import com.meetdheeran.prism.core.Provider
 import com.meetdheeran.prism.core.SecureStore
@@ -111,10 +113,14 @@ fun SettingsScreen(nav: NavController) {
             SettingRow("API keys", icon = Icons.Rounded.Key, value = listOfNotNull(if (SecureStore.has(ctx, SecureStore.KEY_GEMINI)) "Gemini" else null, if (SecureStore.has(ctx, SecureStore.KEY_GROQ)) "Groq" else null).joinToString().ifEmpty { "None yet" }, chevron = true) { nav.navigate(Routes.KEYS) }
             GlassDivider()
             SettingRow("Web search", subtitle = when (settings.webSearch) { WebSearchMode.OFF -> "Never sends queries anywhere; opens the browser instead"; WebSearchMode.PROVIDER -> "Uses ${settings.provider.label}'s search (Gemini: Google Search grounding, paid tier for 3.x models; Groq: browser_search on gpt-oss). Queries go to that provider's search partner." }, value = if (settings.webSearch == WebSearchMode.OFF) "Off" else "On", chevron = true) { dialog = "search" }
+            GlassDivider()
+            SettingRow("Assistant look", subtitle = settings.assistantStyle.label, chevron = true) { dialog = "style" }
         }
 
         GlassGroup(backdrop, "Voice") {
             SwitchRow("Speak replies", "Read answers aloud with the phone's own voice", settings.speakReplies) { on -> update { it.copy(speakReplies = on) } }
+            GlassDivider()
+            SwitchRow("Conversation mode", "After answering, keep listening until you say stop, thanks or that's all", settings.conversationMode) { on -> update { it.copy(conversationMode = on) } }
             GlassDivider()
             SettingRow("Voice input", subtitle = settings.voiceInput.label, chevron = true) { dialog = "voice" }
             GlassDivider()
@@ -178,6 +184,8 @@ fun SettingsScreen(nav: NavController) {
             GlassDivider()
             SettingRow("Memory", icon = Icons.Rounded.Memory, subtitle = "What the assistant remembers about you", chevron = true) { nav.navigate(Routes.MEMORY) }
             GlassDivider()
+            SettingRow("Reminders", icon = Icons.Rounded.Alarm, subtitle = "Reminders Prism fires as notifications", chevron = true) { nav.navigate(Routes.REMINDERS) }
+            GlassDivider()
             SettingRow("Default assistant", subtitle = "Set Prism as the digital assistant app so the assist gesture opens it", chevron = true) { openDefaultAssistantPicker(ctx) }
             GlassDivider()
             SettingRow(
@@ -200,6 +208,10 @@ fun SettingsScreen(nav: NavController) {
             }
         }
 
+        GlassGroup(backdrop, "Glass", footer = "OpenGL refraction bends the real screen behind the control center tiles. Turn it off if tiles look wrong on this phone.") {
+            SwitchRow("Refraction glass (OpenGL)", checked = settings.glRefraction) { on -> update { it.copy(glRefraction = on) } }
+        }
+
         GlassGroup(backdrop, "Danger zone") {
             SettingRow("Delete all conversations", danger = true) { confirm = "conversations" }
             GlassDivider()
@@ -211,6 +223,7 @@ fun SettingsScreen(nav: NavController) {
     }
 
     when (dialog) {
+        "style" -> ChoiceDialog("Assistant look", AssistantStyle.entries.map { it.label to it.note }, AssistantStyle.entries.indexOf(settings.assistantStyle), onPick = { i -> update { it.copy(assistantStyle = AssistantStyle.entries[i]) }; dialog = null }) { dialog = null }
         "model" -> {
             val provider = Providers.forSettings(settings)
             val models = provider.knownModels()

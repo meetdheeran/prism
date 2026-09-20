@@ -26,6 +26,8 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Reminders fire on time even in Doze. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- "Open <app>" needs to see installed apps; this is a sideloaded assistant, not a Play listing. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <!-- Shizuku: the provider below is how the Shizuku server hands us its binder. -->
@@ -135,6 +137,17 @@
 
         <service android:name=".island.IslandService" android:exported="false" />
         <service android:name=".control.ControlCenterService" android:exported="false" />
+
+        <receiver android:name=".reminders.ReminderReceiver" android:exported="false" />
+
+        <!-- Camera captures land in our cache; this is how the camera app gets to write there. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
 
         <receiver android:name=".island.BootReceiver" android:exported="true">
             <intent-filter>

@@ -43,7 +43,17 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import com.meetdheeran.prism.ui.glass.LensRegistry
+import com.meetdheeran.prism.ui.glass.LocalLens
+import com.meetdheeran.prism.ui.glass.RefractionSurface
+import com.meetdheeran.prism.ui.glass.lens
+import com.meetdheeran.prism.ui.motion.LocalTilt
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -78,7 +88,7 @@ import kotlinx.coroutines.delay
  * two vertical sliders, then a grid of small tiles. Every tile springs in with a small stagger.
  */
 @Composable
-fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap?, visible: Boolean, onClose: () -> Unit) {
+fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap?, visible: Boolean, onClose: () -> Unit, glRefraction: Boolean = false) {
     val backdrop = rememberBackdropState()
     val accent = LocalAccent.current
     val on by control.on.collectAsState()
@@ -88,10 +98,16 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
     val np by MediaWatcher.now.collectAsState()
     LaunchedEffect(message) { if (message != null) { delay(2800); control.message.value = null } }
     val scrim by animateFloatAsState(if (visible) 1f else 0f, tween(220), label = "scrim")
+    val lensRegistry = remember { LensRegistry() }
+    var glFailed by remember { mutableStateOf(false) }
+    val useGl = glRefraction && screenshot != null && !glFailed
+    val reveal by animateFloatAsState(if (visible) 1f else 0f, tween(if (visible) 560 else 160, delayMillis = if (visible) 180 else 0), label = "reveal")
 
     Box(Modifier.fillMaxSize()) {
         // Backdrop: the frozen screenshot (dimmed) or the animated glass background.
-        if (screenshot != null) {
+        if (useGl && screenshot != null) {
+            RefractionSurface(screenshot, lensRegistry, LocalTilt.current, reveal, dim = 0.42f * scrim, Modifier.fillMaxSize()) { glFailed = true }
+        } else if (screenshot != null) {
             Box(Modifier.fillMaxSize().backdropSource(backdrop)) {
                 Image(screenshot.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f * scrim)))
@@ -102,6 +118,7 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
         // Tap on empty space closes.
         Box(Modifier.fillMaxSize().clickable(androidx.compose.runtime.remember { MutableInteractionSource() }, null, onClick = onClose))
 
+        CompositionLocalProvider(LocalLens provides (if (useGl) lensRegistry else null)) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -125,7 +142,7 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
                 Row(Modifier.fillMaxWidth().height(164.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
                     if (cluster.isNotEmpty()) {
                         Stagger(visible, index++, Modifier.weight(2f).fillMaxSize()) {
-                            LiquidGlass(backdrop, Modifier.fillMaxSize(), RoundedCornerShape(24.dp), GlassStyle.Regular) {
+                            LiquidGlass(backdrop, Modifier.fillMaxSize().lens("cluster", with(LocalDensity.current) { 24.dp.toPx() }), RoundedCornerShape(24.dp), glassStyle(GlassStyle.Regular)) {
                                 Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     cluster.chunked(2).forEach { row ->
                                         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,10 +155,10 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
                         }
                     }
                     if ("brightness" in visibleIds) Stagger(visible, index++, Modifier.weight(1f).fillMaxSize()) {
-                        VerticalSlider(backdrop, brightness, Icons.Rounded.LightMode, Modifier.fillMaxSize()) { control.setBrightness(it) }
+                        VerticalSlider(backdrop, "brightness", brightness, Icons.Rounded.LightMode, Modifier.fillMaxSize()) { control.setBrightness(it) }
                     }
                     if ("volume" in visibleIds) Stagger(visible, index++, Modifier.weight(1f).fillMaxSize()) {
-                        VerticalSlider(backdrop, volume, Icons.Rounded.VolumeUp, Modifier.fillMaxSize()) { control.setVolume(it) }
+                        VerticalSlider(backdrop, "volume", volume, Icons.Rounded.VolumeUp, Modifier.fillMaxSize()) { control.setVolume(it) }
                     }
                 }
                 Spacer(Modifier.height(gap))
@@ -165,6 +182,7 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Box(Modifier.width(44.dp).height(5.dp).background(Color.White.copy(alpha = 0.4f), CircleShape).pressable(onClick = onClose))
             }
+        }
         }
 
         AnimatedVisibility(message != null, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp), enter = fadeIn(), exit = fadeOut()) {
@@ -208,8 +226,8 @@ private fun SmallTile(backdrop: BackdropState, t: TileSpec, on: Boolean, onClick
     val fill by animateFloatAsState(if (on && t.kind == TileSpec.Kind.TOGGLE) 1f else 0f, Motion.snappy(), label = "fill")
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         LiquidGlass(
-            backdrop, Modifier.fillMaxWidth().height(72.dp).pressable(onClick = onClick), RoundedCornerShape(20.dp),
-            GlassStyle.Tile.copy(tint = if (fill > 0.5f) accent else Color.White, tintAlpha = 0.12f + 0.6f * fill),
+            backdrop, Modifier.fillMaxWidth().height(72.dp).lens(t.id, with(LocalDensity.current) { 20.dp.toPx() }).pressable(onClick = onClick), RoundedCornerShape(20.dp),
+            glassStyle(GlassStyle.Tile.copy(tint = if (fill > 0.5f) accent else Color.White, tintAlpha = 0.12f + 0.6f * fill)),
         ) {
             Icon(t.icon ?: (if (t.id == "lock") Icons.Rounded.Lock else Icons.Rounded.Apps), t.label, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(26.dp))
             if (t.needsShizuku) Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(6.dp).background(PrismColors.SiriOrange, CircleShape))
@@ -220,8 +238,8 @@ private fun SmallTile(backdrop: BackdropState, t: TileSpec, on: Boolean, onClick
 }
 
 @Composable
-private fun VerticalSlider(backdrop: BackdropState, value: Float, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, onChange: (Float) -> Unit) {
-    LiquidGlass(backdrop, modifier, RoundedCornerShape(24.dp), GlassStyle.Regular) {
+private fun VerticalSlider(backdrop: BackdropState, key: String, value: Float, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, onChange: (Float) -> Unit) {
+    LiquidGlass(backdrop, modifier.lens(key, with(LocalDensity.current) { 24.dp.toPx() }), RoundedCornerShape(24.dp), glassStyle(GlassStyle.Regular)) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -246,7 +264,7 @@ private fun VerticalSlider(backdrop: BackdropState, value: Float, icon: androidx
 
 @Composable
 private fun MediaCard(backdrop: BackdropState, np: com.meetdheeran.prism.island.NowPlaying?, modifier: Modifier) {
-    LiquidGlass(backdrop, modifier, RoundedCornerShape(24.dp), GlassStyle.Regular) {
+    LiquidGlass(backdrop, modifier.lens("media", with(LocalDensity.current) { 24.dp.toPx() }), RoundedCornerShape(24.dp), glassStyle(GlassStyle.Regular)) {
         if (np == null) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Rounded.MusicNote, null, tint = PrismColors.TextSecondary, modifier = Modifier.size(28.dp))
@@ -278,3 +296,10 @@ private fun MediaCard(backdrop: BackdropState, np: com.meetdheeran.prism.island.
         }
     }
 }
+
+
+/** In OpenGL mode the tiles keep only their rim and tint; the lens surface draws the rest. */
+@Composable
+private fun glassStyle(base: GlassStyle): GlassStyle =
+    if (LocalLens.current == null) base
+    else base.copy(backdropless = true, blurRadius = 0.dp, refraction = 0f, elevation = 0.dp, innerShadowAlpha = 0f, highlightAlpha = 0.05f, tintAlpha = if (base.tint == Color.White) 0.04f else base.tintAlpha)

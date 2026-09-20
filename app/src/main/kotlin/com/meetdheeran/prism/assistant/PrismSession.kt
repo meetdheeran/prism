@@ -73,6 +73,7 @@ class PrismSession(ctx: Context) : VoiceInteractionSession(ctx), LifecycleOwner,
 
     init {
         setTheme(R.style.Theme_Prism_Transparent)
+        model.onEnd = { hide() }
         savedStateController.performRestore(null)
     }
 

@@ -157,7 +157,7 @@ class ControlCenterService : Service() {
                 val visible by panelVisible
                 PrismTheme(accent = Color(settings.accentArgb)) {
                     CompositionLocalProvider(LocalTilt provides tilt) {
-                        ControlPanel(control = ctrl, tiles = tiles, screenshot = shot, visible = visible, onClose = { closePanel() })
+                        ControlPanel(control = ctrl, tiles = tiles, screenshot = shot, visible = visible, onClose = { closePanel() }, glRefraction = settings.glRefraction)
                     }
                 }
             }
