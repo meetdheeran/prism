@@ -1,6 +1,12 @@
 package com.meetdheeran.prism.core
 
 import android.content.Context
+import com.meetdheeran.prism.actions.AppIndex
+import com.meetdheeran.prism.actions.PhoneTools
+import com.meetdheeran.prism.ai.Assistant
+import com.meetdheeran.prism.ai.AssistantEngine
+import com.meetdheeran.prism.ai.ToolRegistry
+import com.meetdheeran.prism.assistant.SpeechOutput
 import com.meetdheeran.prism.data.HistoryRepository
 import com.meetdheeran.prism.data.MemoryRepository
 import com.meetdheeran.prism.data.PrismDatabase
@@ -18,6 +24,11 @@ class AppGraph private constructor(val app: Context) {
     val db by lazy { PrismDatabase.get(app) }
     val history by lazy { HistoryRepository(db.conversations(), db.messages()) }
     val memory by lazy { MemoryRepository(db.memories()) }
+    val appIndex by lazy { AppIndex(app) }
+    val tools: ToolRegistry by lazy { ToolRegistry().also { PhoneTools.registerAll(it, this) } }
+    val assistant: Assistant by lazy { AssistantEngine(this) }
+    val engine: AssistantEngine get() = assistant as AssistantEngine
+    val speechOutput by lazy { SpeechOutput(app) }
 
     companion object {
         @Volatile private var instance: AppGraph? = null
