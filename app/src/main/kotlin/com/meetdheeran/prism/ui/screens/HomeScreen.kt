@@ -65,6 +65,7 @@ import java.io.File
 import androidx.navigation.NavController
 import com.meetdheeran.prism.assistant.SpeechState
 import com.meetdheeran.prism.core.Provider
+import com.meetdheeran.prism.ai.Providers
 import com.meetdheeran.prism.data.MessageEntity
 import com.meetdheeran.prism.shizuku.ShizukuBridge
 import com.meetdheeran.prism.ui.glass.GlassBackground
@@ -140,7 +141,7 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
                 LiquidGlass(backdrop, Modifier.weight(1f).pressable(scaleDown = 0.98f) { vm.newChat() }, RoundedCornerShape(22.dp), GlassStyle.Tile) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(settings.assistantName, style = PrismTypography.titleMedium, modifier = Modifier.weight(1f))
-                        val model = (if (settings.provider == Provider.GEMINI) settings.geminiModel else settings.groqModel).substringAfterLast('/').ifBlank { "default" }
+                        val model = Providers.modelFor(settings).substringAfterLast('/').ifBlank { "default" }
                         Chip("${settings.provider.label} · ${model.take(18)}")
                     }
                 }

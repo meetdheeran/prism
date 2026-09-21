@@ -63,6 +63,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meetdheeran.prism.ui.glass.GlassStyle
+import com.meetdheeran.prism.ui.glass.LensRegistry
+import com.meetdheeran.prism.ui.glass.LocalLens
+import com.meetdheeran.prism.ui.glass.RefractionSurface
+import com.meetdheeran.prism.ui.glass.lens
+import com.meetdheeran.prism.core.IslandStyle
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
+import androidx.compose.ui.graphics.Color as CColor
 import com.meetdheeran.prism.ui.glass.backdropSource
 import com.meetdheeran.prism.ui.glass.liquidGlass
 import com.meetdheeran.prism.ui.glass.rememberBackdropState
@@ -100,13 +113,33 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     val h by animateDpAsState(targetH, Motion.pop(), label = "h")
     val shape = RoundedCornerShape(if (mode == Mode.EXPANDED) 34.dp else baseH / 2)
 
+    val lensMode = state.style == IslandStyle.LENS
+    val lensRegistry = remember { LensRegistry() }
+    val radiusPx = with(LocalDensity.current) { (if (mode == Mode.EXPANDED) 34.dp else baseH / 2).toPx() }
+    val fallback = remember(state.media?.art) { lensFallback(state.media?.art) }
     Box(Modifier.padding(bottom = 8.dp, start = 8.dp, end = 8.dp)) {
-        // The glass needs something to look through; for a black pill that is a black sheet.
-        Box(Modifier.size(w, h).background(Color.Black, shape).backdropSource(backdrop))
+        if (lensMode) {
+            // iOS-27 lens: a transparent GL window that magnifies the strip of screen behind the notch.
+            CompositionLocalProvider(LocalLens provides lensRegistry) {
+                Box(Modifier.size(w, h).clip(shape)) {
+                    val bmp = state.lensBitmap ?: fallback
+                    RefractionSurface(
+                        bitmap = bmp, registry = lensRegistry, tilt = LocalTilt.current, reveal = 1f, dim = 0f,
+                        modifier = Modifier.fillMaxSize().lens("island", radiusPx),
+                        texRect = if (state.lensBitmap != null) state.lensRect else null,
+                        textureIsSelf = state.lensBitmap == null,
+                        magnify = 1.22f, streak = 1f, clarity = if (state.lensBitmap != null) 0.78f else 0.2f, outsideAlpha = 0f,
+                    )
+                }
+            }
+        } else {
+            // The glass needs something to look through; for a black pill that is a black sheet.
+            Box(Modifier.size(w, h).background(Color.Black, shape).backdropSource(backdrop))
+        }
         Box(
             Modifier
                 .size(w, h)
-                .liquidGlass(backdrop, shape, GlassStyle.Island, LocalTilt.current)
+                .liquidGlass(backdrop, shape, if (lensMode) GlassStyle.Island.copy(backdropless = true, tintAlpha = 0f, highlightAlpha = 0.10f, rimAlpha = 0.85f, innerShadowAlpha = 0f, elevation = 6.dp) else GlassStyle.Island, LocalTilt.current)
                 .pointerInput(mode) {
                     detectTapGestures(
                         onTap = { if (mode == Mode.CALL || mode == Mode.ACTIVITY) state.activity?.let(onActivityTap) else if (state.media != null) onToggleExpand() },
@@ -268,3 +301,20 @@ private fun Expanded(np: NowPlaying) {
 }
 
 private fun fmt(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(s / 60, s % 60) }
+
+
+/** Without a Shizuku snapshot the lens looks through album art or a deep tint. */
+private fun lensFallback(art: Bitmap?): Bitmap {
+    val w = 128; val h = 64
+    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(out)
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), intArrayOf(0xFF1B2450.toInt(), 0xFF0B1020.toInt(), 0xFF2A1440.toInt()), null, Shader.TileMode.CLAMP)
+    c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+    if (art != null) {
+        val small = Bitmap.createScaledBitmap(art, 12, 6, true)
+        val big = Bitmap.createScaledBitmap(small, w, h, true)
+        c.drawBitmap(big, 0f, 0f, Paint().apply { alpha = 170 })
+    }
+    return out
+}

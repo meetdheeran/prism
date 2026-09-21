@@ -104,7 +104,7 @@ fun OnboardingScreen(nav: NavController, onDone: () -> Unit) {
                             Spacer(Modifier.height(24.dp))
                             Text("Ready", style = PrismTypography.displayMedium)
                             Spacer(Modifier.height(8.dp))
-                            Text("Provider: ${if (SecureStore.has(ctx, SecureStore.KEY_GEMINI) || !SecureStore.has(ctx, SecureStore.KEY_GROQ)) Provider.GEMINI.label else Provider.GROQ.label}. Change anything later in Settings.", style = PrismTypography.bodyLarge, color = PrismColors.TextSecondary)
+                            Text("Provider: ${firstProviderWithKey(ctx).label}. Change anything later in Settings.", style = PrismTypography.bodyLarge, color = PrismColors.TextSecondary)
                         }
                     }
                 }
@@ -123,9 +123,8 @@ fun OnboardingScreen(nav: NavController, onDone: () -> Unit) {
                 } else {
                     GlassButton("Start") {
                         scope.launch {
-                            val gemini = SecureStore.has(ctx, SecureStore.KEY_GEMINI)
-                            val groq = SecureStore.has(ctx, SecureStore.KEY_GROQ)
-                            graph.prefs.update { it.copy(provider = if (!gemini && groq) Provider.GROQ else Provider.GEMINI) }
+                            val chosen = firstProviderWithKey(ctx)
+                            graph.prefs.update { it.copy(provider = chosen) }
                             finish()
                         }
                     }
@@ -133,4 +132,13 @@ fun OnboardingScreen(nav: NavController, onDone: () -> Unit) {
             }
         }
     }
+}
+
+
+/** Gemini if it has a key (or nothing does), else whichever provider the user set up. */
+private fun firstProviderWithKey(ctx: android.content.Context): Provider = when {
+    SecureStore.has(ctx, SecureStore.KEY_GEMINI) -> Provider.GEMINI
+    SecureStore.has(ctx, SecureStore.KEY_GROQ) -> Provider.GROQ
+    SecureStore.has(ctx, SecureStore.KEY_CLAUDE) -> Provider.CLAUDE
+    else -> Provider.GEMINI
 }

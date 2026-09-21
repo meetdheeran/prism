@@ -15,13 +15,16 @@ import com.meetdheeran.prism.core.Settings
 object Providers {
     private val geminiInstance: AiProvider by lazy { GeminiProvider() }
     private val groqInstance: AiProvider by lazy { GroqProvider() }
+    private val claudeInstance: AiProvider by lazy { ClaudeProvider() }
 
     fun gemini(): AiProvider = geminiInstance
     fun groq(): AiProvider = groqInstance
+    fun claude(): AiProvider = claudeInstance
 
     fun forProvider(p: Provider): AiProvider = when (p) {
         Provider.GEMINI -> gemini()
         Provider.GROQ -> groq()
+        Provider.CLAUDE -> claude()
     }
 
     /** Only the provider the user selected in Settings is ever used (hard rule 4). */
@@ -31,6 +34,7 @@ object Providers {
     fun keyName(p: Provider): String = when (p) {
         Provider.GEMINI -> SecureStore.KEY_GEMINI
         Provider.GROQ -> SecureStore.KEY_GROQ
+        Provider.CLAUDE -> SecureStore.KEY_CLAUDE
     }
 
     /** Decrypted key for the provider, or null when none has been saved (or it is blank). */
@@ -42,6 +46,7 @@ object Providers {
         val chosen = when (provider.provider) {
             Provider.GEMINI -> s.geminiModel
             Provider.GROQ -> s.groqModel
+            Provider.CLAUDE -> s.claudeModel
         }.trim()
         if (chosen.isNotEmpty()) return chosen
         return provider.knownModels().firstOrNull()?.id ?: ""

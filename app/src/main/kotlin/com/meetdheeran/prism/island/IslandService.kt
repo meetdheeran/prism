@@ -12,6 +12,11 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.IBinder
 import android.os.SystemClock
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.ui.geometry.Rect
+import com.meetdheeran.prism.core.IslandStyle
+import com.meetdheeran.prism.shizuku.ShizukuBridge
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -58,6 +63,10 @@ data class IslandState(
     val pillWidthDp: Float = 88f,
     val pillHeightDp: Float = 38f,
     val event: IslandEvent? = null,
+    val style: IslandStyle = IslandStyle.PILL,
+    /** Snapshot of the screen strip behind the notch (lens style), and the screen rect it covers. */
+    val lensBitmap: Bitmap? = null,
+    val lensRect: Rect? = null,
 ) {
     val showChargeBloom: Boolean get() = chargedAt > 0 && SystemClock.elapsedRealtime() - chargedAt < 3_000
     val showEvent: Boolean get() = event != null && SystemClock.elapsedRealtime() - event.at < 3_500
@@ -159,8 +168,9 @@ class IslandService : Service() {
                     chargedAt = if (s.islandShowCharging) at else 0L,
                     pillWidthDp = cutoutWidthDp() + s.islandExtraWidthDp,
                     pillHeightDp = cutoutHeightDp() + s.islandExtraHeightDp,
+                    style = s.islandStyle,
                 ) to s.islandOffsetDp
-            }.combine(events) { (st, off), ev -> st.copy(event = ev) to off }.collect { (next, offsetDp) ->
+            }.combine(events) { (st, off), ev -> st.copy(event = ev, lensBitmap = state.value.lensBitmap, lensRect = state.value.lensRect) to off }.collect { (next, offsetDp) ->
                 val newOffset = (offsetDp * resources.displayMetrics.density).toInt()
                 val offsetChanged = newOffset != offsetPx
                 offsetPx = newOffset
@@ -179,7 +189,33 @@ class IslandService : Service() {
 
     private fun sync() {
         val s = state.value
-        if (s.hasContent && !showing) show() else if (!s.hasContent && showing) hide()
+        if (s.hasContent && !showing) { show(); refreshLens() } else if (!s.hasContent && showing) hide()
+    }
+
+    private var lensJob: Job? = null
+
+    /**
+     * Lens style: photograph the strip of screen behind the notch (Shizuku), hiding the island
+     * for two frames so it is not in its own picture. Without Shizuku the lens falls back to
+     * album art / a tint (drawn by IslandUi).
+     */
+    private fun refreshLens() {
+        if (state.value.style != IslandStyle.LENS) return
+        lensJob?.cancel()
+        lensJob = scope.launch {
+            if (!ShizukuBridge.isReady()) { state.value = state.value.copy(lensBitmap = null, lensRect = null); return@launch }
+            val v = host?.view
+            v?.alpha = 0f
+            delay(60)
+            val png = ShizukuBridge.screenshotPng().getOrNull()
+            v?.alpha = 1f
+            png ?: return@launch
+            val full = BitmapFactory.decodeByteArray(png, 0, png.size, BitmapFactory.Options().apply { inSampleSize = 2 }) ?: return@launch
+            val d = resources.displayMetrics
+            val stripPx = (240 * d.density).toInt()
+            val crop = Bitmap.createBitmap(full, 0, 0, full.width, minOf(full.height, stripPx / 2))
+            state.value = state.value.copy(lensBitmap = crop, lensRect = Rect(0f, 0f, d.widthPixels.toFloat(), stripPx.toFloat()))
+        }
     }
 
     private var offsetPx = 0
@@ -225,6 +261,7 @@ class IslandService : Service() {
         host?.update(params(expanded))
         collapseJob?.cancel()
         if (expanded) collapseJob = scope.launch { delay(5_000); setExpanded(false) }
+        scope.launch { delay(350); refreshLens() }
     }
 
     private fun hide() {

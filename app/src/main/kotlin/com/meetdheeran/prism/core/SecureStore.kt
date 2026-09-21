@@ -24,6 +24,7 @@ object SecureStore {
 
     const val KEY_GEMINI = "gemini_api_key"
     const val KEY_GROQ = "groq_api_key"
+    const val KEY_CLAUDE = "claude_api_key"
     const val KEY_SEARCH = "search_api_key"
 
     private fun masterKey(): SecretKey {

@@ -18,7 +18,8 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 /** Which cloud provider answers. Both are configured; the user picks one at a time. */
 enum class Provider(val id: String, val label: String) {
     GEMINI("gemini", "Gemini"),
-    GROQ("groq", "Groq");
+    GROQ("groq", "Groq"),
+    CLAUDE("claude", "Claude");
 
     companion object {
         fun from(id: String?): Provider = entries.firstOrNull { it.id == id } ?: GEMINI
@@ -67,10 +68,21 @@ enum class AssistantStyle(val id: String, val label: String, val note: String) {
     }
 }
 
+/** How the island is drawn. */
+enum class IslandStyle(val id: String, val label: String, val note: String) {
+    PILL("pill", "Black pill", "Merges with the notch, like a Dynamic Island"),
+    LENS("lens", "Glass lens (iOS 27)", "A clear bubble that magnifies what is behind it with a rainbow streak; Shizuku gives it the real backdrop");
+
+    companion object {
+        fun from(id: String?): IslandStyle = entries.firstOrNull { it.id == id } ?: LENS
+    }
+}
+
 data class Settings(
     val provider: Provider = Provider.GEMINI,
     val geminiModel: String = "",
     val groqModel: String = "",
+    val claudeModel: String = "",
     val gestureEdge: GestureEdge = GestureEdge.RIGHT,
     /** Where along the edge the handle sits (0 = top, 1 = bottom). */
     val gestureHandleFraction: Float = 0.55f,
@@ -91,6 +103,7 @@ data class Settings(
     val islandShowCalls: Boolean = true,
     val islandShowTimers: Boolean = true,
     /** Fine-tune in dp so the pill hugs this phone's notch exactly. */
+    val islandStyle: IslandStyle = IslandStyle.LENS,
     val islandOffsetDp: Int = 2,
     val islandExtraWidthDp: Int = 24,
     val islandExtraHeightDp: Int = 10,
@@ -106,6 +119,7 @@ class Prefs(private val ctx: Context) {
         val provider = stringPreferencesKey("provider")
         val geminiModel = stringPreferencesKey("gemini_model")
         val groqModel = stringPreferencesKey("groq_model")
+        val claudeModel = stringPreferencesKey("claude_model")
         val gestureEdge = stringPreferencesKey("gesture_edge")
         val gestureHandleFraction = floatPreferencesKey("gesture_handle_fraction")
         val accent = intPreferencesKey("accent_argb")
@@ -122,6 +136,7 @@ class Prefs(private val ctx: Context) {
         val islandShowCharging = booleanPreferencesKey("island_charging")
         val islandShowCalls = booleanPreferencesKey("island_calls")
         val islandShowTimers = booleanPreferencesKey("island_timers")
+        val islandStyle = stringPreferencesKey("island_style")
         val islandOffset = intPreferencesKey("island_offset_dp")
         val islandExtraWidth = intPreferencesKey("island_extra_w_dp")
         val islandExtraHeight = intPreferencesKey("island_extra_h_dp")
@@ -135,6 +150,7 @@ class Prefs(private val ctx: Context) {
         provider = Provider.from(this[K.provider]),
         geminiModel = this[K.geminiModel] ?: "",
         groqModel = this[K.groqModel] ?: "",
+        claudeModel = this[K.claudeModel] ?: "",
         gestureEdge = GestureEdge.from(this[K.gestureEdge]),
         gestureHandleFraction = this[K.gestureHandleFraction] ?: 0.55f,
         accentArgb = this[K.accent] ?: 0xFF0A84FF.toInt(),
@@ -151,6 +167,7 @@ class Prefs(private val ctx: Context) {
         islandShowCharging = this[K.islandShowCharging] ?: true,
         islandShowCalls = this[K.islandShowCalls] ?: true,
         islandShowTimers = this[K.islandShowTimers] ?: true,
+        islandStyle = IslandStyle.from(this[K.islandStyle]),
         islandOffsetDp = this[K.islandOffset] ?: 2,
         islandExtraWidthDp = this[K.islandExtraWidth] ?: 24,
         islandExtraHeightDp = this[K.islandExtraHeight] ?: 10,
@@ -170,6 +187,7 @@ class Prefs(private val ctx: Context) {
             p[K.provider] = s.provider.id
             p[K.geminiModel] = s.geminiModel
             p[K.groqModel] = s.groqModel
+            p[K.claudeModel] = s.claudeModel
             p[K.gestureEdge] = s.gestureEdge.id
             p[K.gestureHandleFraction] = s.gestureHandleFraction
             p[K.accent] = s.accentArgb
@@ -186,6 +204,7 @@ class Prefs(private val ctx: Context) {
             p[K.islandShowCharging] = s.islandShowCharging
             p[K.islandShowCalls] = s.islandShowCalls
             p[K.islandShowTimers] = s.islandShowTimers
+            p[K.islandStyle] = s.islandStyle.id
             p[K.islandOffset] = s.islandOffsetDp
             p[K.islandExtraWidth] = s.islandExtraWidthDp
             p[K.islandExtraHeight] = s.islandExtraHeightDp

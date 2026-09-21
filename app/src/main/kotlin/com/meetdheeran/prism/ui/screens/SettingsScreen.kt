@@ -42,6 +42,7 @@ import com.meetdheeran.prism.assistant.SpeechOutput
 import com.meetdheeran.prism.control.ControlCenterService
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.AssistantStyle
+import com.meetdheeran.prism.core.IslandStyle
 import com.meetdheeran.prism.core.GestureEdge
 import com.meetdheeran.prism.core.Provider
 import com.meetdheeran.prism.core.SecureStore
@@ -110,9 +111,9 @@ fun SettingsScreen(nav: NavController) {
             val model = Providers.modelFor(settings, provider)
             SettingRow("Model", subtitle = Providers.modelInfo(provider, model)?.note?.take(60), value = model.substringAfterLast('/'), chevron = true) { dialog = "model" }
             GlassDivider()
-            SettingRow("API keys", icon = Icons.Rounded.Key, value = listOfNotNull(if (SecureStore.has(ctx, SecureStore.KEY_GEMINI)) "Gemini" else null, if (SecureStore.has(ctx, SecureStore.KEY_GROQ)) "Groq" else null).joinToString().ifEmpty { "None yet" }, chevron = true) { nav.navigate(Routes.KEYS) }
+            SettingRow("API keys", icon = Icons.Rounded.Key, value = listOfNotNull(if (SecureStore.has(ctx, SecureStore.KEY_GEMINI)) "Gemini" else null, if (SecureStore.has(ctx, SecureStore.KEY_GROQ)) "Groq" else null, if (SecureStore.has(ctx, SecureStore.KEY_CLAUDE)) "Claude" else null).joinToString().ifEmpty { "None yet" }, chevron = true) { nav.navigate(Routes.KEYS) }
             GlassDivider()
-            SettingRow("Web search", subtitle = when (settings.webSearch) { WebSearchMode.OFF -> "Never sends queries anywhere; opens the browser instead"; WebSearchMode.PROVIDER -> "Uses ${settings.provider.label}'s search (Gemini: Google Search grounding, paid tier for 3.x models; Groq: browser_search on gpt-oss). Queries go to that provider's search partner." + if (settings.provider == Provider.GROQ && !Providers.modelFor(settings).startsWith("openai/gpt-oss")) " \u26A0 The selected Groq model cannot search; pick an openai/gpt-oss model." else "" }, value = if (settings.webSearch == WebSearchMode.OFF) "Off" else "On", chevron = true) { dialog = "search" }
+            SettingRow("Web search", subtitle = when (settings.webSearch) { WebSearchMode.OFF -> "Never sends queries anywhere; opens the browser instead"; WebSearchMode.PROVIDER -> "Uses ${settings.provider.label}'s search (Gemini: Google Search grounding, paid tier for 3.x models; Groq: browser_search on gpt-oss; Claude: built-in web search, about $10 per 1,000 searches). Queries go to that provider's search partner." + if (settings.provider == Provider.GROQ && !Providers.modelFor(settings).startsWith("openai/gpt-oss")) " \u26A0 The selected Groq model cannot search; pick an openai/gpt-oss model." else "" }, value = if (settings.webSearch == WebSearchMode.OFF) "Off" else "On", chevron = true) { dialog = "search" }
             GlassDivider()
             SettingRow("Assistant look", subtitle = settings.assistantStyle.label, chevron = true) { dialog = "style" }
         }
@@ -159,6 +160,8 @@ fun SettingsScreen(nav: NavController) {
                 update { it.copy(islandEnabled = on) }
                 ServiceToggles.island(ctx, on)
             }
+            GlassDivider()
+            SettingRow("Island look", subtitle = settings.islandStyle.label, chevron = true) { dialog = "island" }
             GlassDivider()
             SwitchRow("Music", checked = settings.islandShowMedia, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowMedia = on) } }
             GlassDivider()
@@ -223,6 +226,7 @@ fun SettingsScreen(nav: NavController) {
     }
 
     when (dialog) {
+        "island" -> ChoiceDialog("Island look", IslandStyle.entries.map { it.label to it.note }, IslandStyle.entries.indexOf(settings.islandStyle), onPick = { i -> update { it.copy(islandStyle = IslandStyle.entries[i]) }; dialog = null }) { dialog = null }
         "style" -> ChoiceDialog("Assistant look", AssistantStyle.entries.map { it.label to it.note }, AssistantStyle.entries.indexOf(settings.assistantStyle), onPick = { i -> update { it.copy(assistantStyle = AssistantStyle.entries[i]) }; dialog = null }) { dialog = null }
         "model" -> {
             val provider = Providers.forSettings(settings)
@@ -230,7 +234,7 @@ fun SettingsScreen(nav: NavController) {
             val current = Providers.modelFor(settings, provider)
             ChoiceDialog("${settings.provider.label} model", models.map { it.label to it.note }, models.indexOfFirst { it.id == current }, onPick = { i ->
                 val id = models[i].id
-                update { if (it.provider == Provider.GEMINI) it.copy(geminiModel = id) else it.copy(groqModel = id) }
+                update { when (it.provider) { Provider.GEMINI -> it.copy(geminiModel = id); Provider.GROQ -> it.copy(groqModel = id); Provider.CLAUDE -> it.copy(claudeModel = id) } }
                 dialog = null
             }) { dialog = null }
         }

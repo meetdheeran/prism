@@ -1,12 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- A glass prism: soft triangle with a light rim. -->
-    <path android:fillColor="#33FFFFFF"
-        android:pathData="M54,26 L82,74 L26,74 Z"/>
-    <path android:strokeColor="#CCFFFFFF" android:strokeWidth="2.5" android:fillColor="#00000000"
-        android:pathData="M54,26 L82,74 L26,74 Z"/>
-    <path android:fillColor="#88A0C8FF"
-        android:pathData="M54,26 L82,74 L54,74 Z"/>
+    <!-- Glass sphere with a rainbow rim (iOS-27 Siri reference). -->
+    <path android:pathData="M54,54 m-32,0 a32,32 0 1,1 64,0 a32,32 0 1,1 -64,0"
+        android:strokeWidth="3.2" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="sweep" android:centerX="54" android:centerY="54">
+                <item android:offset="0" android:color="#FF3B7BFF" />
+                <item android:offset="0.2" android:color="#FF3CC8FF" />
+                <item android:offset="0.45" android:color="#FFFF2D87" />
+                <item android:offset="0.7" android:color="#FFFF8A3D" />
+                <item android:offset="0.85" android:color="#FF8A5CFF" />
+                <item android:offset="1" android:color="#FF3B7BFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M54,54 m-29,0 a29,29 0 1,1 58,0 a29,29 0 1,1 -58,0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="46" android:centerY="44" android:gradientRadius="40">
+                <item android:offset="0" android:color="#FF8C9BFF" />
+                <item android:offset="0.45" android:color="#FF2A3466" />
+                <item android:offset="1" android:color="#FF070A16" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M40,34 c6,-8 22,-8 26,2 c-8,-2 -18,0 -26,-2 z" android:fillColor="#73FFFFFF" />
+    <path android:pathData="M54,54 m-29,0 a29,29 0 1,1 58,0 a29,29 0 1,1 -58,0"
+        android:strokeWidth="1.2" android:strokeColor="#66FFFFFF" android:fillColor="#00000000" />
 </vector>

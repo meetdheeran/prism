@@ -48,6 +48,7 @@ fun KeysScreen(nav: NavController) {
     ScreenScaffold("API keys", onBack = { nav.up() }) { backdrop ->
         KeyCard(backdrop, Provider.GEMINI, "Gemini", "Create one at aistudio.google.com/apikey. Free tier covers the Flash models.", "AIza")
         KeyCard(backdrop, Provider.GROQ, "Groq", "Create one at console.groq.com/keys. Free tier covers gpt-oss and Whisper.", "gsk_")
+        KeyCard(backdrop, Provider.CLAUDE, "Claude", "Create one at console.anthropic.com. Pay-as-you-go; Opus 5 is the default, Haiku 4.5 is the cheapest.", "sk-ant-")
         Text(
             "Keys are encrypted with a hardware-backed key in the Android Keystore, excluded from backups, never logged, and only ever sent to that provider's own API.",
             style = PrismTypography.bodySmall, color = PrismColors.TextTertiary, modifier = Modifier.padding(horizontal = 16.dp),
