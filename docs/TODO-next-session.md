@@ -4,6 +4,14 @@ STATE: bugs 1-3 below are DONE and installed (round 2), plus new features: conve
 point-and-ask camera, real reminders (Room v2), island events, iOS-27 edge-glow assistant
 style, OpenGL refraction glass (control center). Latest APK: Downloads/Prism-debug.apk.
 
+UPDATE 2026-09-21 ~01:30: v2 DONE and INSTALLED: iOS-27 glass-lens island (default style;
+GL magnifying lens over a Shizuku strip snapshot, rainbow streak, black pill still selectable in
+Settings > Dynamic Island > Island look), glass-sphere rainbow-rim app icon, CLAUDE as a third
+provider (Messages API over REST: streaming, tools w/ eager input streaming, images, PDFs,
+web_search_20260209, refusal fallback on Opus 5; key prefix sk-ant-; default claude-opus-5).
+NOT yet user-tested: lens look on the phone, Claude with a real key. README + screenshots ready
+for a later git push (no remote yet).
+
 TOMORROW, in order:
 (a) Collect feedback on round 2 (GL panel look, camera, reminder firing, edge style); fix.
 (b) NEW LOOK REQUEST — see docs/reference/ios27-siri-1..4.png (user: "keep this pic in mind"):
