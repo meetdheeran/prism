@@ -14,7 +14,7 @@ for a later git push (no remote yet).
 
 TOMORROW, in order:
 (a) Collect feedback on round 2 (GL panel look, camera, reminder firing, edge style); fix.
-(b) NEW LOOK REQUEST — see docs/reference/ios27-siri-1..4.png (user: "keep this pic in mind"):
+(b) NEW LOOK REQUEST — see docs/reference/ios27-siri-1..4.png :
     iOS 27 makes Siri/the island a CLEAR GLASS LENS over the camera area: a transparent
     bubble/pill that MAGNIFIES and refracts what is behind it (date/lock-screen text shows
     enlarged through it) with a rainbow chromatic light streak; not a black pill. Also a

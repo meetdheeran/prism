@@ -1,6 +1,8 @@
 # Prism
 
-A Liquid-Glass / Siri-style assistant and control center for Android 12 (built for a OnePlus 7). Kotlin + Jetpack Compose, no root.
+A free, Siri-style assistant that gives you control of your phone and a new way to customise it: a Liquid-Glass assistant, control center and Dynamic Island for Android 12, built for a OnePlus 7. Kotlin + Jetpack Compose, no root, bring your own AI key (Gemini, Groq or Claude).
+
+**Releases:** `v1.0` is the first complete build (assistant, control center, island, reminders, writing tools). `v2.0` adds the iOS-27 lens looks, the glass icon and Claude.
 
 - Chat with **Gemini** or **Groq** using your own key (stored in the Android Keystore, never shown again)
 - Voice in/out, conversation mode, phone actions via tools (apps, alarms, reminders, calendar, music, toggles)
