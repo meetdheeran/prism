@@ -1,4 +1,24 @@
-# Next session (recorded 2026-09-21, user had 30% quota left; do NOT start until asked)
+# Next session (updated 2026-09-21 ~00:50, continue "tomorrow")
+
+STATE: bugs 1-3 below are DONE and installed (round 2), plus new features: conversation mode,
+point-and-ask camera, real reminders (Room v2), island events, iOS-27 edge-glow assistant
+style, OpenGL refraction glass (control center). Latest APK: Downloads/Prism-debug.apk.
+
+TOMORROW, in order:
+(a) Collect feedback on round 2 (GL panel look, camera, reminder firing, edge style); fix.
+(b) NEW LOOK REQUEST — see docs/reference/ios27-siri-1..4.png (user: "keep this pic in mind"):
+    iOS 27 makes Siri/the island a CLEAR GLASS LENS over the camera area: a transparent
+    bubble/pill that MAGNIFIES and refracts what is behind it (date/lock-screen text shows
+    enlarged through it) with a rainbow chromatic light streak; not a black pill. Also a
+    glass-sphere app icon with a rainbow rim (image 4). Plan: island "Lens" style using the
+    RefractionSurface GL path with a backdrop snapshot (Shizuku screencap of the top strip,
+    refreshed on content change) or, without Shizuku, the wallpaper/status area colours;
+    stronger magnification (1.15-1.25x), rainbow specular streak, thin bright rim; keep
+    the black style as option. New adaptive icon: glass sphere + rainbow rim.
+(c) Then the adb-driven TEST AGENT for the app.
+(d) User still has to: allow Prism in the Shizuku app; Developer options → "Disable permission monitoring".
+
+--- original notes ---
 
 User feedback after first real use on the OnePlus 7 (Groq key working, island live):
 
