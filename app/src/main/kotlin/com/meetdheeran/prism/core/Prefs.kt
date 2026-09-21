@@ -61,7 +61,8 @@ enum class WebSearchMode(val id: String, val label: String) {
 /** How the assistant overlay looks. */
 enum class AssistantStyle(val id: String, val label: String, val note: String) {
     GLASS("glass", "Glass sheet", "Dimmed screen, glass pill and answer card, edge glow"),
-    EDGE("edge", "Edge glow only (iOS 27)", "Just the coloured ring hugging the screen; your content stays visible");
+    EDGE("edge", "Edge glow only", "Just the coloured ring hugging the screen; your content stays visible"),
+    LENS("lens", "Lens + glow (iOS 27)", "A glass bubble over the camera magnifies your screen with a rainbow streak, plus the edge glow");
 
     companion object {
         fun from(id: String?): AssistantStyle = entries.firstOrNull { it.id == id } ?: GLASS
@@ -74,7 +75,7 @@ enum class IslandStyle(val id: String, val label: String, val note: String) {
     LENS("lens", "Glass lens (iOS 27)", "A clear bubble that magnifies what is behind it with a rainbow streak; Shizuku gives it the real backdrop");
 
     companion object {
-        fun from(id: String?): IslandStyle = entries.firstOrNull { it.id == id } ?: LENS
+        fun from(id: String?): IslandStyle = entries.firstOrNull { it.id == id } ?: PILL
     }
 }
 
@@ -103,7 +104,7 @@ data class Settings(
     val islandShowCalls: Boolean = true,
     val islandShowTimers: Boolean = true,
     /** Fine-tune in dp so the pill hugs this phone's notch exactly. */
-    val islandStyle: IslandStyle = IslandStyle.LENS,
+    val islandStyle: IslandStyle = IslandStyle.PILL,
     val islandOffsetDp: Int = 2,
     val islandExtraWidthDp: Int = 24,
     val islandExtraHeightDp: Int = 10,

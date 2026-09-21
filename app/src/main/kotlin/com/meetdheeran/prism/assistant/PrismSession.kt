@@ -125,7 +125,10 @@ class PrismSession(ctx: Context) : VoiceInteractionSession(ctx), LifecycleOwner,
 
     override fun onHandleScreenshot(screenshot: Bitmap?) {
         super.onHandleScreenshot(screenshot)
-        screenshot?.let { model.screenshot = Images.bitmapToJpeg(it) }
+        screenshot?.let {
+            model.screenshot = Images.bitmapToJpeg(it)
+            model.screenBitmap = runCatching { Bitmap.createScaledBitmap(it, it.width / 2, it.height / 2, true) }.getOrNull()
+        }
     }
 
     override fun onBackPressed() { hide() }

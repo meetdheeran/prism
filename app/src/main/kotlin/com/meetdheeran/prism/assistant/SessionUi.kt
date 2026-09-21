@@ -54,6 +54,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import com.meetdheeran.prism.ui.glass.LensRegistry
+import com.meetdheeran.prism.ui.glass.LocalLens
+import com.meetdheeran.prism.ui.glass.RefractionSurface
+import com.meetdheeran.prism.ui.glass.lens
+import com.meetdheeran.prism.ui.motion.LocalTilt
 import kotlinx.coroutines.delay
 import com.meetdheeran.prism.core.AssistantStyle
 import com.meetdheeran.prism.ui.glass.GlassStyle
@@ -75,6 +88,8 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
     var citations by mutableStateOf<List<Citation>>(emptyList())
     var pending by mutableStateOf<EngineEvent.NeedsConfirmation?>(null)
     var screenshot: ByteArray? = null
+    /** Half-size copy of the assist screenshot, the lens bubble's backdrop. */
+    var screenBitmap by mutableStateOf<android.graphics.Bitmap?>(null)
     var structureText: String? = null
     var conversationId: Long? = null
         private set
@@ -90,7 +105,7 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
 
     fun begin(autoListen: Boolean) {
         response = ""; error = null; chips = emptyList(); citations = emptyList(); input = ""; streaming = false
-        screenshot = null; structureText = null; screenshotUsed = false; conversationId = null
+        screenshot = null; screenBitmap = null; structureText = null; screenshotUsed = false; conversationId = null
         scope.launch {
             settings.value = graph.prefs.settings.first()
             if (autoListen && !graph.assistant.isConfigured()) {
@@ -176,7 +191,8 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
     }
     val settingsState: State<Settings> = model.settings
     val settings by settingsState
-    val edgeOnly = settings.assistantStyle == AssistantStyle.EDGE
+    val edgeOnly = settings.assistantStyle != AssistantStyle.GLASS
+    val lensMode = settings.assistantStyle == AssistantStyle.LENS
     var keyboard by remember { mutableStateOf(false) }
     val partial = (speech as? SpeechState.Listening)?.partial.orEmpty()
     val cardStyle = if (edgeOnly) GlassStyle.Dark.copy(tintAlpha = 0.62f) else GlassStyle.Dark
@@ -187,6 +203,7 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
         if (edgeOnly) Box(Modifier.fillMaxSize().backdropSource(backdrop))
         else Box(Modifier.fillMaxSize()) { GlassBackground(backdrop, accent = Color(settings.accentArgb), animated = false, intensity = 0.35f, opaque = false) }
         EdgeGlow(active = true, level = level, phase = phase)
+        if (lensMode) LensBubble(model.screenBitmap, level, phase, Modifier.align(Alignment.TopCenter).padding(top = 2.dp))
 
         Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.Bottom) {
             AnimatedVisibility(model.response.isNotEmpty() || model.streaming || model.error != null, enter = fadeIn(Motion.fade()) + slideInVertically(Motion.panel()) { it / 3 }, exit = fadeOut(Motion.fade())) {
@@ -248,4 +265,44 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
             }
         }
     }
+}
+
+
+/**
+ * The iOS-27 Siri bubble: a clear lens over the camera that magnifies the screen underneath
+ * (the assist screenshot Android hands the default assistant), swelling with the voice.
+ */
+@Composable
+private fun LensBubble(bitmap: android.graphics.Bitmap?, level: Float, phase: Phase, modifier: Modifier) {
+    val reg = remember { LensRegistry() }
+    val fallback = remember { lensTint() }
+    val target = 1f + 0.14f * level.coerceIn(0f, 1f) + (if (phase == Phase.Thinking) 0.05f else 0f)
+    val scale by animateFloatAsState(target, Motion.pop(), label = "bubble")
+    val shape = RoundedCornerShape(50)
+    val radiusPx = with(LocalDensity.current) { 34.dp.toPx() }
+    CompositionLocalProvider(LocalLens provides reg) {
+        Box(
+            modifier
+                .size(width = 140.dp, height = 66.dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.2f) }
+                .clip(shape),
+        ) {
+            RefractionSurface(
+                bitmap = bitmap ?: fallback, registry = reg, tilt = LocalTilt.current, reveal = 1f, dim = 0f,
+                modifier = Modifier.fillMaxSize().lens("siri", radiusPx),
+                textureIsSelf = bitmap == null,
+                magnify = 1.3f, streak = 1f, clarity = if (bitmap != null) 0.85f else 0.25f, outsideAlpha = 0f,
+            )
+            Box(Modifier.fillMaxSize().border(1.dp, Color.White.copy(alpha = 0.6f), shape))
+        }
+    }
+}
+
+private fun lensTint(): android.graphics.Bitmap {
+    val w = 140; val h = 66
+    val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    p.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), intArrayOf(0xFF223066.toInt(), 0xFF0B1020.toInt(), 0xFF3A1A55.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
+    android.graphics.Canvas(out).drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+    return out
 }
