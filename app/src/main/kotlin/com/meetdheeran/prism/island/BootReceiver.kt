@@ -17,5 +17,6 @@ class BootReceiver : BroadcastReceiver() {
         runCatching { rescheduleRemindersBlocking(context) }
         if (s.islandEnabled) ContextCompat.startForegroundService(context, Intent(context, IslandService::class.java).setAction("start"))
         if (s.controlCenterEnabled) ContextCompat.startForegroundService(context, Intent(context, ControlCenterService::class.java).setAction("start"))
+        if (s.aodEnabled) ContextCompat.startForegroundService(context, Intent(context, com.meetdheeran.prism.aod.AodService::class.java).setAction("start"))
     }
 }

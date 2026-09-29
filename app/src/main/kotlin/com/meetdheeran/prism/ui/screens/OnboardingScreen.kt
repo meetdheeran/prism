@@ -65,32 +65,17 @@ fun OnboardingScreen(nav: NavController, onDone: () -> Unit) {
                         0 -> {
                             Orb(size = 150.dp, phase = Phase.Idle)
                             Spacer(Modifier.height(28.dp))
-                            Text("Meet Prism", style = PrismTypography.displayMedium)
+                            Text(if (com.meetdheeran.prism.ui.theme.Appearance.nothing) "prism" else "Meet Prism", style = PrismTypography.displayMedium)
                             Spacer(Modifier.height(8.dp))
-                            Text("A glass assistant for your phone. Talk or type, ask about your screen, control the phone, and keep a memory you can edit.", style = PrismTypography.bodyLarge, color = PrismColors.TextSecondary, modifier = Modifier.padding(horizontal = 8.dp))
+                            Text("An assistant for your phone. Talk or type, ask about your screen, control the phone, and keep a memory you can edit.", style = PrismTypography.bodyLarge, color = PrismColors.TextSecondary, modifier = Modifier.padding(horizontal = 8.dp))
                         }
                         1 -> {
-                            Text("Bring your own AI", style = PrismTypography.headlineLarge)
+                            Text(if (com.meetdheeran.prism.ui.theme.Appearance.nothing) "free ai" else "Free AI, your key", style = PrismTypography.headlineLarge)
                             Spacer(Modifier.height(8.dp))
-                            Text("Prism talks directly to Gemini or Groq with your own API key. Keys are stored encrypted on this phone and never shown again.", style = PrismTypography.bodyLarge, color = PrismColors.TextSecondary)
+                            Text("Prism runs on Gemini. Google gives every Google account a free key — it takes about a minute, and nobody pays anything.", style = PrismTypography.bodyLarge, color = PrismColors.TextSecondary)
                             Spacer(Modifier.height(20.dp))
-                            LiquidGlass(backdrop, Modifier.fillMaxWidth(), RoundedCornerShape(22.dp), GlassStyle.Regular) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Gemini", style = PrismTypography.titleMedium, modifier = Modifier.weight(1f))
-                                        Text(if (SecureStore.has(ctx, SecureStore.KEY_GEMINI)) "Saved" else "Not set", color = if (SecureStore.has(ctx, SecureStore.KEY_GEMINI)) PrismColors.Good else PrismColors.TextTertiary)
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Groq", style = PrismTypography.titleMedium, modifier = Modifier.weight(1f))
-                                        Text(if (SecureStore.has(ctx, SecureStore.KEY_GROQ)) "Saved" else "Not set", color = if (SecureStore.has(ctx, SecureStore.KEY_GROQ)) PrismColors.Good else PrismColors.TextTertiary)
-                                    }
-                                    Spacer(Modifier.height(14.dp))
-                                    GlassButton("Add keys", Modifier.fillMaxWidth()) { nav.navigate(Routes.KEYS) }
-                                }
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Text("You can skip this and add keys later; the interface works without them.", style = PrismTypography.bodySmall, color = PrismColors.TextTertiary)
+                            Column(Modifier.fillMaxWidth()) { FreeKeySetup(backdrop) { scope.launch { pager.animateScrollToPage(2) } } }
+                            Text("Already pay for Gemini, Groq or Claude? Add that key later in Settings → API keys → Advanced.", style = PrismTypography.bodySmall, color = PrismColors.TextTertiary)
                         }
                         2 -> {
                             Text("Only what you allow", style = PrismTypography.headlineLarge)
@@ -112,7 +97,7 @@ fun OnboardingScreen(nav: NavController, onDone: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f)) {
                     repeat(4) { i ->
-                        Box(Modifier.size(if (i == pager.currentPage) 10.dp else 7.dp).clip(CircleShape).background(if (i == pager.currentPage) Color.White else Color.White.copy(alpha = 0.3f)))
+                        Box(Modifier.size(if (i == pager.currentPage) 10.dp else 7.dp).clip(CircleShape).background(if (i == pager.currentPage) PrismColors.TextPrimary else PrismColors.TextTertiary))
                         Spacer(Modifier.width(6.dp))
                     }
                 }

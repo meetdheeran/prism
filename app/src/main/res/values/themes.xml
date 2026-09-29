@@ -15,4 +15,9 @@
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
+    <!-- Always-on display: pure black from the first frame, no open/close animation. -->
+    <style name="Theme.Prism.Aod" parent="Theme.Prism">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
 </resources>

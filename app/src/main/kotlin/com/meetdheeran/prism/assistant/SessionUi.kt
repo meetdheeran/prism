@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
+import com.meetdheeran.prism.ui.theme.Appearance
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -81,6 +84,8 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings = mutableStateOf(Settings())
     var input by mutableStateOf("")
+    /** The last thing the user asked, shown above the answer in the Nothing panel. */
+    var asked by mutableStateOf("")
     var response by mutableStateOf("")
     var streaming by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -140,6 +145,7 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
         val t = text.trim()
         if (t.isEmpty()) return
         input = ""
+        asked = t
         job?.cancel()
         response = ""; error = null; chips = emptyList(); citations = emptyList(); streaming = true
         val wantsScreen = screenWords.containsMatchIn(t)
@@ -195,6 +201,12 @@ fun SessionUi(model: SessionModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
     val lensMode = settings.assistantStyle == AssistantStyle.LENS
     var keyboard by remember { mutableStateOf(false) }
     val partial = (speech as? SpeechState.Listening)?.partial.orEmpty()
+    SideEffect { AssistantPulse.publish(phase, level, sessionOpen = true) }
+    DisposableEffect(Unit) { onDispose { AssistantPulse.clear() } }
+    if (Appearance.nothing) {
+        NothingSessionUi(model, phase, level, listening, partial, speech, onClose, onOpenApp)
+        return
+    }
     val cardStyle = if (edgeOnly) GlassStyle.Dark.copy(tintAlpha = 0.62f) else GlassStyle.Dark
 
     Box(Modifier.fillMaxSize()) {

@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import com.meetdheeran.prism.ui.theme.Look
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "prism_prefs")
 
@@ -113,6 +114,36 @@ data class Settings(
     val userName: String = "",
     /** Comma-separated tile ids; empty = default order. */
     val tilesOrder: String = "",
+    /** Glass or Nothing. Changes every surface, and how the assistant talks. */
+    val look: Look = Look.GLASS,
+    val islandShowAssistant: Boolean = true,
+    val islandShowNotifications: Boolean = true,
+    /** Always-on display shown whenever the screen turns off. */
+    val aodEnabled: Boolean = false,
+    val aodPocketOff: Boolean = true,
+    val aodNightOff: Boolean = true,
+    /** Minutes after midnight. */
+    val aodNightStart: Int = 0,
+    val aodNightEnd: Int = 7 * 60,
+    val aodLowBatteryOff: Boolean = true,
+    val aodLowBatteryPercent: Int = 15,
+    // --- Customisation (3.0 fix) ---
+    val islandSplit: Boolean = true,
+    val islandSpeed: Float = 1f,
+    val aodClockStyle: String = "auto",
+    val aodClockScale: Float = 1f,
+    val aodBrightness: Int = 2,
+    val aodShowDate: Boolean = true,
+    val aodShowBattery: Boolean = true,
+    val aodShowNotifications: Boolean = true,
+    val aodShowMusic: Boolean = true,
+    val nothingAccent: Int = 0xFFD71921.toInt(),
+    val nothingDotGrid: Boolean = true,
+    val nothingDotTitles: Boolean = true,
+    val glyphStrength: Float = 1f,
+    val answerLength: String = "auto",
+    val typewriterCps: Int = 90,
+    val edgeLights: Boolean = true,
 )
 
 class Prefs(private val ctx: Context) {
@@ -145,6 +176,32 @@ class Prefs(private val ctx: Context) {
         val assistantName = stringPreferencesKey("assistant_name")
         val userName = stringPreferencesKey("user_name")
         val tilesOrder = stringPreferencesKey("tiles_order")
+        val look = stringPreferencesKey("look")
+        val islandShowAssistant = booleanPreferencesKey("island_assistant")
+        val islandShowNotifications = booleanPreferencesKey("island_notifications")
+        val aodEnabled = booleanPreferencesKey("aod_enabled")
+        val aodPocketOff = booleanPreferencesKey("aod_pocket_off")
+        val aodNightOff = booleanPreferencesKey("aod_night_off")
+        val aodNightStart = intPreferencesKey("aod_night_start")
+        val aodNightEnd = intPreferencesKey("aod_night_end")
+        val aodLowBatteryOff = booleanPreferencesKey("aod_low_battery_off")
+        val aodLowBatteryPercent = intPreferencesKey("aod_low_battery_percent")
+        val islandSplit = booleanPreferencesKey("island_split")
+        val islandSpeed = floatPreferencesKey("island_speed")
+        val aodClockStyle = stringPreferencesKey("aod_clock_style")
+        val aodClockScale = floatPreferencesKey("aod_clock_scale")
+        val aodBrightness = intPreferencesKey("aod_brightness")
+        val aodShowDate = booleanPreferencesKey("aod_show_date")
+        val aodShowBattery = booleanPreferencesKey("aod_show_battery")
+        val aodShowNotifications = booleanPreferencesKey("aod_show_notifications")
+        val aodShowMusic = booleanPreferencesKey("aod_show_music")
+        val nothingAccent = intPreferencesKey("nothing_accent")
+        val nothingDotGrid = booleanPreferencesKey("nothing_dot_grid")
+        val nothingDotTitles = booleanPreferencesKey("nothing_dot_titles")
+        val glyphStrength = floatPreferencesKey("glyph_strength")
+        val answerLength = stringPreferencesKey("answer_length")
+        val typewriterCps = intPreferencesKey("typewriter_cps")
+        val edgeLights = booleanPreferencesKey("edge_lights")
     }
 
     private fun Preferences.toSettings() = Settings(
@@ -176,6 +233,32 @@ class Prefs(private val ctx: Context) {
         assistantName = this[K.assistantName] ?: "Prism",
         userName = this[K.userName] ?: "",
         tilesOrder = this[K.tilesOrder] ?: "",
+        look = Look.from(this[K.look]),
+        islandShowAssistant = this[K.islandShowAssistant] ?: true,
+        islandShowNotifications = this[K.islandShowNotifications] ?: true,
+        aodEnabled = this[K.aodEnabled] ?: false,
+        aodPocketOff = this[K.aodPocketOff] ?: true,
+        aodNightOff = this[K.aodNightOff] ?: true,
+        aodNightStart = this[K.aodNightStart] ?: 0,
+        aodNightEnd = this[K.aodNightEnd] ?: (7 * 60),
+        aodLowBatteryOff = this[K.aodLowBatteryOff] ?: true,
+        aodLowBatteryPercent = this[K.aodLowBatteryPercent] ?: 15,
+        islandSplit = this[K.islandSplit] ?: true,
+        islandSpeed = this[K.islandSpeed] ?: 1f,
+        aodClockStyle = this[K.aodClockStyle] ?: "auto",
+        aodClockScale = this[K.aodClockScale] ?: 1f,
+        aodBrightness = this[K.aodBrightness] ?: 2,
+        aodShowDate = this[K.aodShowDate] ?: true,
+        aodShowBattery = this[K.aodShowBattery] ?: true,
+        aodShowNotifications = this[K.aodShowNotifications] ?: true,
+        aodShowMusic = this[K.aodShowMusic] ?: true,
+        nothingAccent = this[K.nothingAccent] ?: 0xFFD71921.toInt(),
+        nothingDotGrid = this[K.nothingDotGrid] ?: true,
+        nothingDotTitles = this[K.nothingDotTitles] ?: true,
+        glyphStrength = this[K.glyphStrength] ?: 1f,
+        answerLength = this[K.answerLength] ?: "auto",
+        typewriterCps = this[K.typewriterCps] ?: 90,
+        edgeLights = this[K.edgeLights] ?: true,
     )
 
     val settings: Flow<Settings> = ctx.dataStore.data.map { it.toSettings() }
@@ -213,6 +296,32 @@ class Prefs(private val ctx: Context) {
             p[K.assistantName] = s.assistantName
             p[K.userName] = s.userName
             p[K.tilesOrder] = s.tilesOrder
+            p[K.look] = s.look.id
+            p[K.islandShowAssistant] = s.islandShowAssistant
+            p[K.islandShowNotifications] = s.islandShowNotifications
+            p[K.aodEnabled] = s.aodEnabled
+            p[K.aodPocketOff] = s.aodPocketOff
+            p[K.aodNightOff] = s.aodNightOff
+            p[K.aodNightStart] = s.aodNightStart
+            p[K.aodNightEnd] = s.aodNightEnd
+            p[K.aodLowBatteryOff] = s.aodLowBatteryOff
+            p[K.aodLowBatteryPercent] = s.aodLowBatteryPercent
+            p[K.islandSplit] = s.islandSplit
+            p[K.islandSpeed] = s.islandSpeed
+            p[K.aodClockStyle] = s.aodClockStyle
+            p[K.aodClockScale] = s.aodClockScale
+            p[K.aodBrightness] = s.aodBrightness
+            p[K.aodShowDate] = s.aodShowDate
+            p[K.aodShowBattery] = s.aodShowBattery
+            p[K.aodShowNotifications] = s.aodShowNotifications
+            p[K.aodShowMusic] = s.aodShowMusic
+            p[K.nothingAccent] = s.nothingAccent
+            p[K.nothingDotGrid] = s.nothingDotGrid
+            p[K.nothingDotTitles] = s.nothingDotTitles
+            p[K.glyphStrength] = s.glyphStrength
+            p[K.answerLength] = s.answerLength
+            p[K.typewriterCps] = s.typewriterCps
+            p[K.edgeLights] = s.edgeLights
         }
     }
 }

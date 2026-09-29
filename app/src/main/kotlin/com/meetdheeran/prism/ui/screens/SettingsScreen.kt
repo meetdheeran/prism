@@ -59,11 +59,19 @@ import com.meetdheeran.prism.ui.theme.LocalAccent
 import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
 import kotlinx.coroutines.launch
+import com.meetdheeran.prism.aod.AodService
+import com.meetdheeran.prism.ui.theme.Appearance
+import com.meetdheeran.prism.ui.theme.Look
+import com.meetdheeran.prism.ui.theme.NOTHING_ACCENTS
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.border
 
 /** Start/stop the two overlay services. Both refuse politely without the overlay permission. */
 object ServiceToggles {
     fun controlCenter(ctx: Context, on: Boolean) = toggle(ctx, ControlCenterService::class.java, on)
     fun island(ctx: Context, on: Boolean) = toggle(ctx, IslandService::class.java, on)
+    fun aod(ctx: Context, on: Boolean) = toggle(ctx, AodService::class.java, on)
     private fun toggle(ctx: Context, cls: Class<*>, on: Boolean) {
         val i = Intent(ctx, cls).setAction(if (on) "start" else "stop")
         if (on) ContextCompat.startForegroundService(ctx, i) else ctx.startService(i)
@@ -92,7 +100,39 @@ fun SettingsScreen(nav: NavController) {
     var confirm by remember { mutableStateOf<String?>(null) }
     fun update(block: (Settings) -> Settings) = scope.launch { graph.prefs.update(block) }
 
+    var advanced by remember { mutableStateOf(false) }
     ScreenScaffold("Settings", onBack = { nav.up() }) { backdrop ->
+        GlassGroup(backdrop, "Look", footer = settings.look.note + ". Changes every screen, the assistant, the island and the always-on display.") {
+            Box(Modifier.padding(16.dp)) {
+                Segmented(Look.entries.map { it.label }, Look.entries.indexOf(settings.look)) { i -> update { it.copy(look = Look.entries[i]) } }
+            }
+            if (Appearance.nothing) {
+                GlassDivider()
+                SettingRow("Signal colour", subtitle = "The one colour the Nothing look uses")
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                    NOTHING_ACCENTS.forEach { c ->
+                        val on = c == settings.nothingAccent
+                        Box(
+                            Modifier.size(32.dp).clip(CircleShape).background(Color(c))
+                                .border(if (on) 3.dp else 1.dp, if (on) PrismColors.TextPrimary else PrismColors.TextTertiary, CircleShape)
+                                .pressable { update { it.copy(nothingAccent = c) } },
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    }
+                }
+                GlassDivider()
+                SwitchRow("Dot grid background", checked = settings.nothingDotGrid) { on -> update { it.copy(nothingDotGrid = on) } }
+                GlassDivider()
+                SwitchRow("Dot-matrix titles", "Off uses the plain font for big titles too", settings.nothingDotTitles) { on -> update { it.copy(nothingDotTitles = on) } }
+            }
+            GlassDivider()
+            SwitchRow("Edge lights", if (Appearance.nothing) "Glyph strips round the screen while the assistant listens" else "The coloured glow round the screen while the assistant listens", settings.edgeLights) { on -> update { it.copy(edgeLights = on) } }
+            if (Appearance.nothing && settings.edgeLights) {
+                GlassDivider()
+                SliderRow("Glyph strength", "${(settings.glyphStrength * 100).toInt()}%", settings.glyphStrength, 0.3f..1.5f) { v -> update { it.copy(glyphStrength = v) } }
+            }
+        }
+
         GlassGroup(backdrop, "Assistant") {
             SettingRow("Name", subtitle = "How the assistant refers to itself", trailing = {
                 var name by remember(settings.assistantName) { mutableStateOf(settings.assistantName) }
@@ -103,8 +143,13 @@ fun SettingsScreen(nav: NavController) {
                 )
             })
             GlassDivider()
-            Box(Modifier.padding(16.dp)) {
-                Segmented(Provider.entries.map { it.label }, Provider.entries.indexOf(settings.provider)) { i -> update { it.copy(provider = Provider.entries[i]) } }
+            // Gemini is the only AI a new user sees (free key). Groq and Claude live under Advanced.
+            if (advanced || settings.provider != Provider.GEMINI) {
+                Box(Modifier.padding(16.dp)) {
+                    Segmented(Provider.entries.map { it.label }, Provider.entries.indexOf(settings.provider)) { i -> update { it.copy(provider = Provider.entries[i]) } }
+                }
+            } else {
+                SettingRow("AI", subtitle = "Gemini — free with your own Google key", value = "Gemini")
             }
             GlassDivider()
             val provider = Providers.forSettings(settings)
@@ -114,8 +159,22 @@ fun SettingsScreen(nav: NavController) {
             SettingRow("API keys", icon = Icons.Rounded.Key, value = listOfNotNull(if (SecureStore.has(ctx, SecureStore.KEY_GEMINI)) "Gemini" else null, if (SecureStore.has(ctx, SecureStore.KEY_GROQ)) "Groq" else null, if (SecureStore.has(ctx, SecureStore.KEY_CLAUDE)) "Claude" else null).joinToString().ifEmpty { "None yet" }, chevron = true) { nav.navigate(Routes.KEYS) }
             GlassDivider()
             SettingRow("Web search", subtitle = when (settings.webSearch) { WebSearchMode.OFF -> "Never sends queries anywhere; opens the browser instead"; WebSearchMode.PROVIDER -> "Uses ${settings.provider.label}'s search (Gemini: Google Search grounding, paid tier for 3.x models; Groq: browser_search on gpt-oss; Claude: built-in web search, about $10 per 1,000 searches). Queries go to that provider's search partner." + if (settings.provider == Provider.GROQ && !Providers.modelFor(settings).startsWith("openai/gpt-oss")) " \u26A0 The selected Groq model cannot search; pick an openai/gpt-oss model." else "" }, value = if (settings.webSearch == WebSearchMode.OFF) "Off" else "On", chevron = true) { dialog = "search" }
+            if (!Appearance.nothing) {
+                GlassDivider()
+                SettingRow("Assistant look", subtitle = settings.assistantStyle.label, chevron = true) { dialog = "style" }
+            }
             GlassDivider()
-            SettingRow("Assistant look", subtitle = settings.assistantStyle.label, chevron = true) { dialog = "style" }
+            SettingRow("Answer length", subtitle = when (settings.answerLength) { "short" -> "Blunt: a few words"; "normal" -> "Short and friendly"; "detailed" -> "Fuller answers with detail"; else -> "Follows the look (Nothing = blunt)" })
+            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                val opts = listOf("auto", "short", "normal", "detailed")
+                Segmented(listOf("Auto", "Short", "Normal", "Detailed"), opts.indexOf(settings.answerLength).coerceAtLeast(0)) { i -> update { it.copy(answerLength = opts[i]) } }
+            }
+            if (Appearance.nothing) {
+                GlassDivider()
+                SliderRow("Typing speed", "${settings.typewriterCps} chars/s", settings.typewriterCps.toFloat(), 30f..240f) { v -> update { it.copy(typewriterCps = v.toInt()) } }
+            }
+            GlassDivider()
+            SettingRow("Advanced", subtitle = if (advanced) "Other AI providers shown above" else "Use Groq or Claude with your own paid key", value = if (advanced) "On" else "Off") { advanced = !advanced }
         }
 
         GlassGroup(backdrop, "Voice") {
@@ -161,7 +220,17 @@ fun SettingsScreen(nav: NavController) {
                 ServiceToggles.island(ctx, on)
             }
             GlassDivider()
-            SettingRow("Island look", subtitle = settings.islandStyle.label, chevron = true) { dialog = "island" }
+            if (!Appearance.nothing) {
+                SettingRow("Island look", subtitle = settings.islandStyle.label, chevron = true) { dialog = "island" }
+                GlassDivider()
+            }
+            SwitchRow("Assistant", "Tap or hold the island to talk; it shows listening and thinking", settings.islandShowAssistant, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowAssistant = on) } }
+            GlassDivider()
+            SwitchRow("Split into two", "When two things run at once, one pops off into its own bubble (like iPhone)", settings.islandSplit, enabled = settings.islandEnabled) { on -> update { it.copy(islandSplit = on) } }
+            GlassDivider()
+            SliderRow("Animation speed", "%.1f×".format(settings.islandSpeed), settings.islandSpeed, 0.5f..2f) { v -> update { it.copy(islandSpeed = v) } }
+            GlassDivider()
+            SwitchRow("Notification peek", "New notifications slide out of the island for a moment", settings.islandShowNotifications, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowNotifications = on) } }
             GlassDivider()
             SwitchRow("Music", checked = settings.islandShowMedia, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowMedia = on) } }
             GlassDivider()
@@ -176,6 +245,45 @@ fun SettingsScreen(nav: NavController) {
             TuneRow("Wider", settings.islandExtraWidthDp, -20, 60) { v -> update { it.copy(islandExtraWidthDp = v) } }
             GlassDivider()
             TuneRow("Taller", settings.islandExtraHeightDp, -10, 24) { v -> update { it.copy(islandExtraHeightDp = v) } }
+        }
+
+        GlassGroup(backdrop, "Always-on display", footer = "Shows whenever the screen turns off: clock, date, notifications, music and battery. Android can't draw on a truly off screen, so this keeps the screen on at very low brightness and shifts pixels every minute to protect the OLED.") {
+            SwitchRow("Enable always-on display", checked = settings.aodEnabled) { on ->
+                // Android 12 only lets an app open a screen from the background with "Display over other apps".
+                if (on && !OverlayHost.canDrawOverlays(ctx)) { nav.navigate(Routes.PERMISSIONS); return@SwitchRow }
+                update { it.copy(aodEnabled = on) }
+                ServiceToggles.aod(ctx, on)
+            }
+            GlassDivider()
+            SettingRow("Clock style")
+            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                val opts = listOf("auto", "dot", "thin", "bold")
+                Segmented(listOf("Auto", "Dot", "Thin", "Bold"), opts.indexOf(settings.aodClockStyle).coerceAtLeast(0)) { i -> update { it.copy(aodClockStyle = opts[i]) } }
+            }
+            GlassDivider()
+            SliderRow("Clock size", "${(settings.aodClockScale * 100).toInt()}%", settings.aodClockScale, 0.6f..1.4f) { v -> update { it.copy(aodClockScale = v) } }
+            GlassDivider()
+            SliderRow("Brightness", "${settings.aodBrightness}%", settings.aodBrightness.toFloat(), 1f..30f) { v -> update { it.copy(aodBrightness = v.toInt()) } }
+            GlassDivider()
+            SwitchRow("Date", checked = settings.aodShowDate) { on -> update { it.copy(aodShowDate = on) } }
+            GlassDivider()
+            SwitchRow("Battery", checked = settings.aodShowBattery) { on -> update { it.copy(aodShowBattery = on) } }
+            GlassDivider()
+            SwitchRow("Notification icons", checked = settings.aodShowNotifications) { on -> update { it.copy(aodShowNotifications = on) } }
+            GlassDivider()
+            SwitchRow("Music", checked = settings.aodShowMusic) { on -> update { it.copy(aodShowMusic = on) } }
+            GlassDivider()
+            SwitchRow("Off in pocket or face down", checked = settings.aodPocketOff, enabled = settings.aodEnabled) { on -> update { it.copy(aodPocketOff = on) } }
+            GlassDivider()
+            SwitchRow("Off at night", "Between the hours below", settings.aodNightOff, enabled = settings.aodEnabled) { on -> update { it.copy(aodNightOff = on) } }
+            if (settings.aodNightOff) {
+                GlassDivider()
+                HourRow("Night starts", settings.aodNightStart) { v -> update { it.copy(aodNightStart = v) } }
+                GlassDivider()
+                HourRow("Night ends", settings.aodNightEnd) { v -> update { it.copy(aodNightEnd = v) } }
+            }
+            GlassDivider()
+            SwitchRow("Off on low battery", "Below ${settings.aodLowBatteryPercent}%", settings.aodLowBatteryOff, enabled = settings.aodEnabled) { on -> update { it.copy(aodLowBatteryOff = on) } }
         }
 
         GlassGroup(backdrop, "Background notification", footer = "Android 12 requires one notification while the island or control center runs. Turn its channel off and it disappears; Prism keeps working.") {
@@ -198,7 +306,7 @@ fun SettingsScreen(nav: NavController) {
             ) { when (shizuku) { ShizukuState.NO_PERMISSION -> ShizukuBridge.requestPermission(); else -> ShizukuBridge.openShizukuApp(ctx) } }
         }
 
-        GlassGroup(backdrop, "Appearance") {
+        if (!Appearance.nothing) GlassGroup(backdrop, "Appearance") {
             Row(Modifier.padding(16.dp)) {
                 ACCENTS.forEach { c ->
                     Box(
@@ -211,7 +319,7 @@ fun SettingsScreen(nav: NavController) {
             }
         }
 
-        GlassGroup(backdrop, "Glass", footer = "OpenGL refraction bends the real screen behind the control center tiles. Turn it off if tiles look wrong on this phone.") {
+        if (!Appearance.nothing) GlassGroup(backdrop, "Glass", footer = "OpenGL refraction bends the real screen behind the control center tiles. Turn it off if tiles look wrong on this phone.") {
             SwitchRow("Refraction glass (OpenGL)", checked = settings.glRefraction) { on -> update { it.copy(glRefraction = on) } }
         }
 
@@ -268,4 +376,33 @@ private fun TuneRow(title: String, value: Int, min: Int, max: Int, onChange: (In
             colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = 0.2f)),
         )
     })
+}
+
+/** Picks a whole hour of the day, stored as minutes after midnight. */
+@Composable
+private fun HourRow(title: String, minutes: Int, onChange: (Int) -> Unit) {
+    val accent = LocalAccent.current
+    SettingRow(title, value = "%02d:00".format(minutes / 60), trailing = {
+        Slider(
+            (minutes / 60).toFloat(), { onChange(it.toInt() * 60) }, valueRange = 0f..23f, steps = 22,
+            modifier = Modifier.width(150.dp),
+            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = accent, inactiveTrackColor = PrismColors.TextTertiary.copy(alpha = 0.4f)),
+        )
+    })
+}
+
+/** A labelled slider with its current value shown on the right. */
+@Composable
+private fun SliderRow(title: String, value: String, current: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+    val accent = LocalAccent.current
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = PrismTypography.bodyLarge, color = PrismColors.TextPrimary, modifier = Modifier.weight(1f))
+            Text(value, style = PrismTypography.bodyMedium, color = PrismColors.TextSecondary)
+        }
+        Slider(
+            current.coerceIn(range), onChange, valueRange = range,
+            colors = SliderDefaults.colors(thumbColor = if (Appearance.nothing) PrismColors.TextPrimary else Color.White, activeTrackColor = accent, inactiveTrackColor = PrismColors.TextTertiary.copy(alpha = 0.4f)),
+        )
+    }
 }

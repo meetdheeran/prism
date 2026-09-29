@@ -40,6 +40,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meetdheeran.prism.ui.motion.Motion
 import com.meetdheeran.prism.ui.theme.PrismColors
+import com.meetdheeran.prism.ui.theme.Appearance
+import com.meetdheeran.prism.ui.nothing.DotLoader
+import com.meetdheeran.prism.ui.nothing.GlyphEdge
+import com.meetdheeran.prism.ui.nothing.GlyphMatrix
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -58,6 +62,8 @@ fun EdgeGlow(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 42.dp,
 ) {
+    if (Appearance.nothing) { GlyphEdge(active, level, phase, modifier); return }
+    if (!Appearance.edgeLights) return
     val appear by animateFloatAsState(if (active) 1f else 0f, Motion.panel(), label = "appear")
     if (appear <= 0.005f) return
     val inf = rememberInfiniteTransition(label = "glow")
@@ -125,6 +131,7 @@ private fun rotatedStops(colors: List<Color>, t: Float, alpha: Float): Array<Pai
 /** The Siri sphere: additive colour blobs drifting inside a glass ball, swelling with the voice. */
 @Composable
 fun Orb(modifier: Modifier = Modifier, level: Float = 0f, phase: Phase = Phase.Idle, size: Dp = 120.dp) {
+    if (Appearance.nothing) { GlyphMatrix(modifier, level, phase, size); return }
     val inf = rememberInfiniteTransition(label = "orb")
     val speed = if (phase == Phase.Thinking) 0.5f else 1f
     val t1 by inf.animateFloat(0f, 360f, infiniteRepeatable(tween((6000 * speed).toInt(), easing = LinearEasing)), label = "t1")
@@ -169,6 +176,7 @@ private fun DrawScope.blob(color: Color, angleDeg: Float, dist: Float, r: Float,
 /** Three dots that swell in sequence — the universal "working on it". */
 @Composable
 fun ThinkingDots(modifier: Modifier = Modifier, color: Color = PrismColors.TextSecondary, dot: Dp = 7.dp) {
+    if (Appearance.nothing) { DotLoader(modifier, color, dot * 0.6f); return }
     val inf = rememberInfiniteTransition(label = "dots")
     val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "t")
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {

@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -136,6 +137,18 @@
         </service>
 
         <service android:name=".island.IslandService" android:exported="false" />
+        <service android:name=".aod.AodService" android:exported="false" />
+        <!-- Always-on display: its own task so closing it lands on the lock screen, not in Prism. -->
+        <activity
+            android:name=".aod.AodActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.meetdheeran.prism.aod"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Prism.Aod" />
         <service android:name=".control.ControlCenterService" android:exported="false" />
 
         <receiver android:name=".reminders.ReminderReceiver" android:exported="false" />

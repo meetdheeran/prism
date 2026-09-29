@@ -41,6 +41,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.meetdheeran.prism.assistant.AssistantPulse
+import com.meetdheeran.prism.ui.siri.Phase
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -67,10 +69,24 @@ data class IslandState(
     /** Snapshot of the screen strip behind the notch (lens style), and the screen rect it covers. */
     val lensBitmap: Bitmap? = null,
     val lensRect: Rect? = null,
+    /** A notification sliding out of the island, and when it arrived (elapsedRealtime). */
+    val peek: ShadeItem? = null,
+    val peekAt: Long = 0L,
+    /** The assistant's live phase, from the chat screen or the system session. */
+    val ai: Phase = Phase.Idle,
+    val aiLevel: Float = 0f,
+    /** Keep the pill up even with nothing to show, so it can be tapped or held to talk. */
+    val alwaysOn: Boolean = false,
+    /** Two things at once → a pill plus a detached bubble, like the iPhone island. */
+    val split: Boolean = true,
+    /** Bumped when a timed pop (bloom, event, peek) expires, so the UI re-reads the clock. */
+    val tick: Long = 0L,
 ) {
     val showChargeBloom: Boolean get() = chargedAt > 0 && SystemClock.elapsedRealtime() - chargedAt < 3_000
     val showEvent: Boolean get() = event != null && SystemClock.elapsedRealtime() - event.at < 3_500
-    val hasContent: Boolean get() = media != null || activity != null || showChargeBloom || showEvent
+    val showPeek: Boolean get() = peek != null && SystemClock.elapsedRealtime() - peekAt < 3_500
+    val showAi: Boolean get() = ai != Phase.Idle
+    val hasContent: Boolean get() = alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
 }
 
 /** Battery broadcasts as flows. */
@@ -111,6 +127,7 @@ class IslandService : Service() {
     private var charging: ChargingWatcher? = null
     private val state = MutableStateFlow(IslandState())
     private val events = MutableStateFlow<IslandEvent?>(null)
+    private val peeks = MutableStateFlow<Pair<ShadeItem?, Long>>(null to 0L)
     private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var btReceiver: BroadcastReceiver? = null
     private var collapseJob: Job? = null
@@ -153,6 +170,7 @@ class IslandService : Service() {
                 events.value = IslandEvent(IslandEvent.Kind.BLUETOOTH, if (name.isBlank()) "Bluetooth connected" else "Connected \u00B7 $name", SystemClock.elapsedRealtime())
             }
         }
+        scope.launch { PrismNotificationListener.peek.collect { peeks.value = it to SystemClock.elapsedRealtime() } }
         ContextCompat.registerReceiver(this, btReceiver!!, IntentFilter(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED), ContextCompat.RECEIVER_EXPORTED)
         scope.launch {
             combine(graph.prefs.settings, MediaWatcher.now, PrismNotificationListener.activities, ch.info, ch.connectedAt) { s: Settings, np, acts, bat, at ->
@@ -169,15 +187,26 @@ class IslandService : Service() {
                     pillWidthDp = cutoutWidthDp() + s.islandExtraWidthDp,
                     pillHeightDp = cutoutHeightDp() + s.islandExtraHeightDp,
                     style = s.islandStyle,
-                ) to s.islandOffsetDp
-            }.combine(events) { (st, off), ev -> st.copy(event = ev, lensBitmap = state.value.lensBitmap, lensRect = state.value.lensRect) to off }.collect { (next, offsetDp) ->
+                    alwaysOn = s.islandShowAssistant,
+                    split = s.islandSplit,
+                ) to s
+            }.combine(events) { (st, s), ev -> st.copy(event = ev, lensBitmap = state.value.lensBitmap, lensRect = state.value.lensRect) to s }
+            .combine(peeks) { (st, s), (item, at) -> (if (s.islandShowNotifications) st.copy(peek = item, peekAt = at) else st) to s }
+            .combine(AssistantPulse.state) { (st, s), ai ->
+                // The system session draws its own island panel; don't stack a second pill under it.
+                (if (s.islandShowAssistant && !ai.sessionOpen) st.copy(ai = ai.phase, aiLevel = ai.level) else st) to s.islandOffsetDp
+            }.collect { (next, offsetDp) ->
                 val newOffset = (offsetDp * resources.displayMetrics.density).toInt()
                 val offsetChanged = newOffset != offsetPx
                 offsetPx = newOffset
                 state.value = next.copy(expanded = state.value.expanded && next.media != null)
                 if (offsetChanged && showing) host?.update(params(state.value.expanded))
                 sync()
-                if (next.showChargeBloom || next.showEvent) { delay(3_600); sync() }
+                if (next.showChargeBloom || next.showEvent || next.showPeek) {
+                    delay(3_600)
+                    state.value = state.value.copy(tick = SystemClock.elapsedRealtime())
+                    sync()
+                }
             }
         }
     }
@@ -246,6 +275,7 @@ class IslandService : Service() {
                         onToggleExpand = { setExpanded(!st.expanded) },
                         onAssistant = { openAssistant() },
                         onActivityTap = { a -> runCatching { a.contentIntent?.send() } },
+                        onPeekTap = { n -> runCatching { n.contentIntent?.send() } },
                     )
                 }
             }

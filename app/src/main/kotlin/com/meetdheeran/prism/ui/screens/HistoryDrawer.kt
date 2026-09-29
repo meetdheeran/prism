@@ -98,7 +98,7 @@ fun HistoryDrawer(
                             Modifier
                                 .fillMaxWidth()
                                 .pressable(scaleDown = 0.98f) { onOpen(c.id); onDismiss() }
-                                .background(if (on) Color.White.copy(alpha = 0.10f) else Color.Transparent, RoundedCornerShape(12.dp))
+                                .background(if (on) PrismColors.TextPrimary.copy(alpha = 0.10f) else Color.Transparent, RoundedCornerShape(12.dp))
                                 .padding(horizontal = 10.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

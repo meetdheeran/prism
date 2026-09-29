@@ -81,6 +81,7 @@ import com.meetdheeran.prism.ui.siri.Chip
 import com.meetdheeran.prism.ui.theme.LocalAccent
 import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
+import com.meetdheeran.prism.ui.theme.Appearance
 import kotlinx.coroutines.delay
 
 /**
@@ -100,7 +101,7 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
     val scrim by animateFloatAsState(if (visible) 1f else 0f, tween(220), label = "scrim")
     val lensRegistry = remember { LensRegistry() }
     var glFailed by remember { mutableStateOf(false) }
-    val useGl = glRefraction && screenshot != null && !glFailed
+    val useGl = glRefraction && screenshot != null && !glFailed && !Appearance.nothing
     val reveal by animateFloatAsState(if (visible) 1f else 0f, tween(if (visible) 560 else 160, delayMillis = if (visible) 180 else 0), label = "reveal")
 
     Box(Modifier.fillMaxSize()) {
@@ -180,7 +181,7 @@ fun ControlPanel(control: TileControl, tiles: List<TileSpec>, screenshot: Bitmap
             }
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(44.dp).height(5.dp).background(Color.White.copy(alpha = 0.4f), CircleShape).pressable(onClick = onClose))
+                Box(Modifier.width(44.dp).height(5.dp).background(PrismColors.TextTertiary, CircleShape).pressable(onClick = onClose))
             }
         }
         }
@@ -207,15 +208,15 @@ private fun RoundTile(t: TileSpec, on: Boolean, modifier: Modifier, onClick: () 
     Box(
         modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.10f + 0.05f * fill))
+            .background(PrismColors.TextPrimary.copy(alpha = 0.08f + 0.05f * fill))
             .pressable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.fillMaxSize().background(accent.copy(alpha = 0.85f * fill)))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(t.icon ?: Icons.Rounded.Apps, t.label, tint = Color.White, modifier = Modifier.size(24.dp))
+            Icon(t.icon ?: Icons.Rounded.Apps, t.label, tint = if (fill > 0.5f) Color.White else PrismColors.TextPrimary, modifier = Modifier.size(24.dp))
             Spacer(Modifier.height(4.dp))
-            Text(t.label, style = PrismTypography.labelSmall, color = Color.White.copy(alpha = 0.9f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(t.label, style = PrismTypography.labelSmall, color = (if (fill > 0.5f) Color.White else PrismColors.TextPrimary).copy(alpha = 0.9f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -229,7 +230,7 @@ private fun SmallTile(backdrop: BackdropState, t: TileSpec, on: Boolean, onClick
             backdrop, Modifier.fillMaxWidth().height(72.dp).lens(t.id, with(LocalDensity.current) { 20.dp.toPx() }).pressable(onClick = onClick), RoundedCornerShape(20.dp),
             glassStyle(GlassStyle.Tile.copy(tint = if (fill > 0.5f) accent else Color.White, tintAlpha = 0.12f + 0.6f * fill)),
         ) {
-            Icon(t.icon ?: (if (t.id == "lock") Icons.Rounded.Lock else Icons.Rounded.Apps), t.label, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(26.dp))
+            Icon(t.icon ?: (if (t.id == "lock") Icons.Rounded.Lock else Icons.Rounded.Apps), t.label, tint = if (fill > 0.5f || !Appearance.nothing) Color.White else PrismColors.TextPrimary, modifier = Modifier.align(Alignment.Center).size(26.dp))
             if (t.needsShizuku) Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(6.dp).background(PrismColors.SiriOrange, CircleShape))
         }
         Spacer(Modifier.height(4.dp))
@@ -255,9 +256,9 @@ private fun VerticalSlider(backdrop: BackdropState, key: String, value: Float, i
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val h = size.height * value.coerceIn(0f, 1f)
-                drawRect(Color.White.copy(alpha = 0.85f), topLeft = Offset(0f, size.height - h), size = Size(size.width, h))
+                drawRect(PrismColors.TextPrimary.copy(alpha = 0.85f), topLeft = Offset(0f, size.height - h), size = Size(size.width, h))
             }
-            Icon(icon, null, tint = if (value > 0.18f) Color.Black.copy(alpha = 0.7f) else Color.White, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp).size(24.dp))
+            Icon(icon, null, tint = if (value > 0.18f) PrismColors.Ink.copy(alpha = 0.8f) else PrismColors.TextPrimary, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp).size(24.dp))
         }
     }
 }
@@ -273,9 +274,9 @@ private fun MediaCard(backdrop: BackdropState, np: com.meetdheeran.prism.island.
             }
         } else {
             Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)).background(PrismColors.TextPrimary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
                     np.art?.let { Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-                        ?: Icon(Icons.Rounded.MusicNote, null, tint = Color.White)
+                        ?: Icon(Icons.Rounded.MusicNote, null, tint = PrismColors.TextPrimary)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
@@ -285,11 +286,11 @@ private fun MediaCard(backdrop: BackdropState, np: com.meetdheeran.prism.island.
                     Chip(np.packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() })
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(30.dp).pressable { MediaWatcher.previous() })
+                        Icon(Icons.Rounded.SkipPrevious, "Previous", tint = PrismColors.TextPrimary, modifier = Modifier.size(30.dp).pressable { MediaWatcher.previous() })
                         Spacer(Modifier.width(18.dp))
-                        Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(38.dp).pressable { MediaWatcher.toggle() })
+                        Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = PrismColors.TextPrimary, modifier = Modifier.size(38.dp).pressable { MediaWatcher.toggle() })
                         Spacer(Modifier.width(18.dp))
-                        Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(30.dp).pressable { MediaWatcher.next() })
+                        Icon(Icons.Rounded.SkipNext, "Next", tint = PrismColors.TextPrimary, modifier = Modifier.size(30.dp).pressable { MediaWatcher.next() })
                     }
                 }
             }

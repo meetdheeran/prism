@@ -45,10 +45,17 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun KeysScreen(nav: NavController) {
+    var advanced by remember { mutableStateOf(false) }
     ScreenScaffold("API keys", onBack = { nav.up() }) { backdrop ->
-        KeyCard(backdrop, Provider.GEMINI, "Gemini", "Create one at aistudio.google.com/apikey. Free tier covers the Flash models.", "AIza")
-        KeyCard(backdrop, Provider.GROQ, "Groq", "Create one at console.groq.com/keys. Free tier covers gpt-oss and Whisper.", "gsk_")
-        KeyCard(backdrop, Provider.CLAUDE, "Claude", "Create one at console.anthropic.com. Pay-as-you-go; Opus 5 is the default, Haiku 4.5 is the cheapest.", "sk-ant-")
+        FreeKeySetup(backdrop)
+        GlassGroup(backdrop) {
+            SettingRow("Advanced", subtitle = "Type a key by hand, or use Groq or Claude with a paid key", value = if (advanced) "Hide" else "Show") { advanced = !advanced }
+        }
+        if (advanced) {
+            KeyCard(backdrop, Provider.GEMINI, "Gemini", "Paid or free Gemini key from aistudio.google.com/apikey.", "AIza")
+            KeyCard(backdrop, Provider.GROQ, "Groq", "Create one at console.groq.com/keys. Free tier covers gpt-oss and Whisper.", "gsk_")
+            KeyCard(backdrop, Provider.CLAUDE, "Claude", "Create one at console.anthropic.com. Pay-as-you-go; Opus 5 is the default, Haiku 4.5 is the cheapest.", "sk-ant-")
+        }
         Text(
             "Keys are encrypted with a hardware-backed key in the Android Keystore, excluded from backups, never logged, and only ever sent to that provider's own API.",
             style = PrismTypography.bodySmall, color = PrismColors.TextTertiary, modifier = Modifier.padding(horizontal = 16.dp),
@@ -81,7 +88,7 @@ private fun KeyCard(backdrop: BackdropState, provider: Provider, title: String, 
                 trailingIcon = { IconButton({ show = !show }) { Icon(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, "Show", tint = PrismColors.TextSecondary) } },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = PrismColors.TextPrimary, unfocusedTextColor = PrismColors.TextPrimary,
-                    focusedBorderColor = accent, unfocusedBorderColor = Color.White.copy(alpha = 0.25f), cursorColor = accent,
+                    focusedBorderColor = accent, unfocusedBorderColor = PrismColors.TextTertiary, cursorColor = accent,
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )

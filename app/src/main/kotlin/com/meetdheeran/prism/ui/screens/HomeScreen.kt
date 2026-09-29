@@ -132,6 +132,8 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
     Box(Modifier.fillMaxSize()) {
         GlassBackground(backdrop, accent = accent, animated = true)
         EdgeGlow(active = listening || phase == Phase.Thinking, level = level, phase = phase)
+        androidx.compose.runtime.SideEffect { com.meetdheeran.prism.assistant.AssistantPulse.publish(phase, level) }
+        androidx.compose.runtime.DisposableEffect(Unit) { onDispose { com.meetdheeran.prism.assistant.AssistantPulse.clear() } }
 
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             // Top bar
@@ -172,7 +174,7 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
             if (vm.attachments.isNotEmpty()) {
                 Row(Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) {
                     vm.attachments.forEachIndexed { i, a ->
-                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.1f))) {
+                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(PrismColors.TextPrimary.copy(alpha = 0.1f))) {
                             val bmp = remember(a) { if (a.isImage) runCatching { BitmapFactory.decodeByteArray(a.bytes, 0, a.bytes.size) }.getOrNull() else null }
                             if (bmp != null) Image(bmp.asImageBitmap(), a.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                             else Text(a.mime.substringAfter('/').uppercase().take(5), style = PrismTypography.labelSmall, modifier = Modifier.align(Alignment.Center))
@@ -278,7 +280,7 @@ private fun EmptyState(level: Float, phase: Phase, name: String, onSuggestion: (
             "Play some focus music",
             "Summarize my day from the calendar",
         ).forEach { s ->
-            Box(Modifier.padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.10f)).pressable { onSuggestion(s) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Box(Modifier.padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(PrismColors.TextPrimary.copy(alpha = 0.10f)).pressable { onSuggestion(s) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Text(s, style = PrismTypography.bodyMedium)
             }
         }

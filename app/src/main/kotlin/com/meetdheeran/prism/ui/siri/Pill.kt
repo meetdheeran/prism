@@ -48,6 +48,11 @@ import com.meetdheeran.prism.ui.motion.pressable
 import com.meetdheeran.prism.ui.theme.LocalAccent
 import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
+import com.meetdheeran.prism.ui.theme.Appearance
+import com.meetdheeran.prism.ui.theme.NothingFonts
+import com.meetdheeran.prism.ui.theme.NothingPalette
+import com.meetdheeran.prism.ui.nothing.Typewriter
+import androidx.compose.foundation.border
 
 /**
  * The bottom pill: type or talk. The mic button becomes a stop button with a level ring while
@@ -102,10 +107,10 @@ fun ListeningPill(
                     Icon(Icons.Filled.Stop, "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
                 text.isNotBlank() -> RingButton(level = 0f, accent = accent, filled = true, onClick = onSend) {
-                    Icon(Icons.Rounded.ArrowUpward, "Send", tint = Color.White, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Rounded.ArrowUpward, "Send", tint = if (Appearance.nothing) Appearance.palette.bg else Color.White, modifier = Modifier.size(22.dp))
                 }
                 else -> RingButton(level = 0f, accent = accent, onClick = onMic, enabled = enabled && !processing) {
-                    Icon(Icons.Filled.Mic, "Talk", tint = Color.White, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Filled.Mic, "Talk", tint = if (Appearance.nothing) Appearance.palette.text else Color.White, modifier = Modifier.size(22.dp))
                 }
             }
         }
@@ -123,10 +128,23 @@ private fun RingButton(level: Float, accent: Color, onClick: () -> Unit, filled:
     ) {
         Canvas(Modifier.size(44.dp)) {
             val r = size.minDimension / 2f
-            if (lvl > 0f) {
+            if (lvl > 0f && Appearance.nothing) {
+                drawCircle(NothingPalette.Red.copy(alpha = 0.9f), r - 1.dp.toPx(), style = Stroke(1.dp.toPx() + 3.dp.toPx() * lvl))
+            } else if (lvl > 0f) {
                 drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = 0.55f * lvl), Color.Transparent)), r * (1f + 0.6f * lvl))
                 drawCircle(accent.copy(alpha = 0.9f), r - 1.dp.toPx(), style = Stroke(1.5.dp.toPx() + 3.dp.toPx() * lvl))
             }
+        }
+        if (Appearance.nothing) {
+            // Nothing: solid ink when it's the action, red while recording, hairline otherwise.
+            val p = Appearance.palette
+            val fill = when { lvl > 0f || level > 0f -> NothingPalette.Red; filled -> p.text; else -> Color.Transparent }
+            Box(
+                Modifier.size(38.dp).clip(CircleShape).background(fill)
+                    .then(if (fill == Color.Transparent) Modifier.border(1.dp, p.line, CircleShape) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) { content() }
+            return@Box
         }
         Box(
             Modifier
@@ -157,6 +175,11 @@ fun ResponseCard(
         Column(Modifier.padding(18.dp).animateContentSize(Motion.panel())) {
             if (text.isEmpty() && streaming && error == null) {
                 ThinkingDots(Modifier.padding(vertical = 6.dp))
+            } else if (Appearance.nothing) {
+                // Glyph-style reply: a mono readout. A live answer types itself out behind a block
+                // cursor; saved answers in the history are shown whole so scrolling doesn't replay them.
+                val mono = PrismTypography.bodyMedium.copy(fontFamily = NothingFonts.Mono, lineHeight = 22.sp, color = PrismColors.TextPrimary)
+                if (streaming) Typewriter(text, mono) else Text(text, style = mono)
             } else {
                 Text(
                     text + if (streaming) " ▍" else "",
@@ -182,6 +205,15 @@ fun ResponseCard(
 @Composable
 fun Chip(label: String, accent: Boolean = false, onClick: (() -> Unit)? = null) {
     val a = LocalAccent.current
+    if (Appearance.nothing) {
+        val p = Appearance.palette
+        val shape = RoundedCornerShape(50)
+        val m = Modifier.clip(shape).border(1.dp, if (accent) NothingPalette.Red else p.line, shape).padding(horizontal = 10.dp, vertical = 5.dp)
+        Box(if (onClick != null) Modifier.pressable(onClick = onClick).then(m) else m) {
+            Text(label.take(48).uppercase(), style = TextStyle(fontSize = 10.sp, letterSpacing = 0.8.sp, fontFamily = NothingFonts.Mono, color = if (accent) NothingPalette.Red else p.text2))
+        }
+        return
+    }
     val base = Modifier
         .clip(RoundedCornerShape(12.dp))
         .background(if (accent) a.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))

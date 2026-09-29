@@ -44,6 +44,9 @@ import com.meetdheeran.prism.ui.motion.pressable
 import com.meetdheeran.prism.ui.theme.LocalAccent
 import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
+import com.meetdheeran.prism.ui.theme.Appearance
+import com.meetdheeran.prism.ui.theme.NothingPalette
+import androidx.compose.foundation.border
 
 /** iOS-Settings-style page: large title, glass groups, everything scrolls under the status bar. */
 @Composable
@@ -71,7 +74,8 @@ fun ScreenScaffold(
                     GlassIconButton(backdrop, Icons.Rounded.ArrowBackIosNew, "Back", onClick = onBack)
                     Spacer(Modifier.width(12.dp))
                 }
-                Text(title, style = PrismTypography.displayMedium, modifier = Modifier.weight(1f))
+                // Nothing names things in lowercase; the dot face does the rest.
+                Text(if (Appearance.nothing) title.lowercase() else title, style = PrismTypography.displayMedium, modifier = Modifier.weight(1f))
                 actions()
             }
             Spacer(Modifier.height(18.dp))
@@ -104,7 +108,8 @@ fun GlassGroup(backdrop: BackdropState, title: String? = null, footer: String? =
 
 @Composable
 fun GlassDivider() {
-    Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.5.dp).background(Color.White.copy(alpha = 0.14f)))
+    val c = if (Appearance.nothing) Appearance.palette.line else Color.White.copy(alpha = 0.14f)
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(if (Appearance.nothing) 1.dp else 0.5.dp).background(c))
 }
 
 @Composable
@@ -124,7 +129,8 @@ fun SettingRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = if (danger) PrismColors.Bad else LocalAccent.current, modifier = Modifier.size(22.dp))
+            val tint = when { danger -> PrismColors.Bad; Appearance.nothing -> PrismColors.TextSecondary; else -> LocalAccent.current }
+            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(14.dp))
         }
         Column(Modifier.weight(1f)) {
@@ -142,7 +148,11 @@ fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean, enabled
     SettingRow(title, subtitle, onClick = { if (enabled) onChange(!checked) }, trailing = {
         Switch(
             checked = checked, onCheckedChange = onChange, enabled = enabled,
-            colors = SwitchDefaults.colors(
+            colors = if (Appearance.nothing) SwitchDefaults.colors(
+                checkedTrackColor = NothingPalette.Red, checkedThumbColor = Color.White, checkedBorderColor = Color.Transparent,
+                uncheckedTrackColor = Appearance.palette.surface2, uncheckedThumbColor = Appearance.palette.text2,
+                uncheckedBorderColor = Appearance.palette.line,
+            ) else SwitchDefaults.colors(
                 checkedTrackColor = PrismColors.Good, checkedThumbColor = Color.White,
                 uncheckedTrackColor = Color.White.copy(alpha = 0.18f), uncheckedThumbColor = Color.White.copy(alpha = 0.85f),
                 uncheckedBorderColor = Color.Transparent,
@@ -157,7 +167,7 @@ fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifie
     Row(
         modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.10f))
+            .background(if (Appearance.nothing) Appearance.palette.surface2 else Color.White.copy(alpha = 0.10f))
             .padding(3.dp),
     ) {
         options.forEachIndexed { i, label ->
@@ -166,12 +176,13 @@ fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifie
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (on) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                    .background(if (on) (if (Appearance.nothing) Appearance.palette.text else Color.White.copy(alpha = 0.22f)) else Color.Transparent)
                     .pressable(scaleDown = 0.97f) { onSelect(i) }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = PrismTypography.labelLarge, color = if (on) PrismColors.TextPrimary else PrismColors.TextSecondary)
+                val onColor = if (Appearance.nothing) Appearance.palette.bg else PrismColors.TextPrimary
+                Text(if (Appearance.nothing) label.uppercase() else label, style = PrismTypography.labelLarge, color = if (on) onColor else PrismColors.TextSecondary, maxLines = 1)
             }
         }
     }
@@ -180,6 +191,21 @@ fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifie
 @Composable
 fun GlassButton(text: String, modifier: Modifier = Modifier, filled: Boolean = true, danger: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val accent = LocalAccent.current
+    if (Appearance.nothing) {
+        // Nothing buttons: solid ink pill for the main action, hairline pill otherwise, red for danger.
+        val p = Appearance.palette
+        val shape = RoundedCornerShape(50)
+        val fill = when { !enabled -> p.surface2; danger -> NothingPalette.Red; filled -> p.text; else -> Color.Transparent }
+        val ink = when { !enabled -> p.text3; danger -> Color.White; filled -> p.bg; else -> p.text }
+        Box(
+            modifier.clip(shape).background(fill)
+                .then(if (fill == Color.Transparent) Modifier.border(1.dp, p.line, shape) else Modifier)
+                .pressable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 13.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text(text.uppercase(), style = PrismTypography.labelLarge, color = ink) }
+        return
+    }
     val bg = when {
         !enabled -> Color.White.copy(alpha = 0.08f)
         danger -> PrismColors.Bad.copy(alpha = 0.85f)

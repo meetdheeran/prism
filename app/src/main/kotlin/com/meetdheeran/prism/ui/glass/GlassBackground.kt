@@ -16,8 +16,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.meetdheeran.prism.ui.theme.PrismColors
+import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
+import com.meetdheeran.prism.ui.theme.Appearance
 
 /**
  * What lives behind the glass on our own screens: OLED-black with slow, soft colour orbs so the
@@ -42,6 +44,10 @@ fun GlassBackground(
     } else {
         androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0.3f) }
     }
+    if (Appearance.nothing) {
+        NothingBackground(state, modifier, opaque)
+        return
+    }
     Canvas(
         modifier
             .fillMaxSize()
@@ -62,5 +68,30 @@ fun GlassBackground(
         orb(PrismColors.SiriPurple, w * (0.85f + 0.08f * cos(a * 0.8f)), h * (0.35f + 0.08f * sin(a * 0.7f)), w * 0.7f, 0.30f)
         orb(PrismColors.SiriPink, w * (0.30f + 0.12f * cos(a * 1.1f)), h * (0.80f + 0.06f * sin(a)), w * 0.65f, 0.22f)
         orb(PrismColors.SiriCyan, w * (0.75f + 0.10f * sin(a * 0.6f)), h * (0.92f + 0.04f * cos(a * 0.9f)), w * 0.6f, 0.20f)
+    }
+}
+
+/** Nothing look: a flat canvas with a faint dot grid, the texture on Nothing's widgets and wallpapers. */
+@Composable
+private fun NothingBackground(state: BackdropState, modifier: Modifier, opaque: Boolean) {
+    val p = Appearance.palette
+    Canvas(
+        modifier
+            .fillMaxSize()
+            .then(if (opaque) Modifier.background(p.bg) else Modifier)
+            .backdropSource(state),
+    ) {
+        if (!opaque || !Appearance.dotGrid) return@Canvas
+        val step = 18.dp.toPx()
+        val r = 1.1.dp.toPx()
+        var y = step / 2
+        while (y < size.height) {
+            var x = step / 2
+            while (x < size.width) {
+                drawCircle(p.dot, r, Offset(x, y))
+                x += step
+            }
+            y += step
+        }
     }
 }

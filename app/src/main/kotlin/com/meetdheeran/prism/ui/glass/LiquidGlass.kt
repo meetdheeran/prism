@@ -3,6 +3,8 @@ package com.meetdheeran.prism.ui.glass
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Shader
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.meetdheeran.prism.ui.motion.LocalTilt
+import com.meetdheeran.prism.ui.theme.Appearance
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -85,10 +88,25 @@ fun Modifier.liquidGlass(
     shape: Shape = RoundedCornerShape(28.dp),
     style: GlassStyle = GlassStyle.Regular,
     tilt: Offset = Offset.Zero,
-): Modifier = this
+): Modifier = if (Appearance.nothing) nothingPanel(shape, style) else this
     .shadow(style.elevation, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.45f), spotColor = Color.Black.copy(alpha = 0.45f))
     .then(GlassElement(state, shape, style, tilt))
     .clip(shape)
+
+/**
+ * The Nothing look has no glass: a flat card with a hairline, or solid black for anything that
+ * must merge with the camera cutout (the island). Dark panels stay dark in both themes.
+ */
+private fun Modifier.nothingPanel(shape: Shape, style: GlassStyle): Modifier {
+    val p = Appearance.palette
+    return when {
+        style == GlassStyle.Island -> background(Color.Black, shape).clip(shape)
+        // A strong colour tint means "active" (an on tile): Nothing shows that as solid signal red.
+        style.tint != Color.White && style.tint != Color.Black && style.tintAlpha > 0.4f -> background(style.tint, shape).clip(shape)
+        style.tint == Color.Black -> background(if (Appearance.dark) p.surface else Color(0xFF111111), shape).border(1.dp, p.line, shape).clip(shape)
+        else -> background(p.surface, shape).border(1.dp, p.line, shape).clip(shape)
+    }
+}
 
 @Composable
 fun LiquidGlass(

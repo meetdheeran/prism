@@ -4,7 +4,10 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
+import com.meetdheeran.prism.ui.theme.Appearance
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,6 +36,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings by graph.prefs.settings.collectAsState(initial = Settings())
             val tilt by rememberDeviceTilt()
+            // Glass is always dark; the Nothing look follows the phone, so the status-bar icons must too.
+            val lightBars = Appearance.nothing && !Appearance.dark
+            LaunchedEffect(lightBars) {
+                val t = android.graphics.Color.TRANSPARENT
+                val style = if (lightBars) SystemBarStyle.light(t, t) else SystemBarStyle.dark(t)
+                enableEdgeToEdge(style, style)
+            }
             PrismTheme(accent = Color(settings.accentArgb)) {
                 CompositionLocalProvider(LocalTilt provides tilt) {
                     PrismNav(

@@ -55,7 +55,7 @@ fun MemoryScreen(nav: NavController) {
                 OutlinedTextField(
                     newText, { newText = it }, placeholder = { Text("e.g. I'm vegetarian. My office is in Dubai Marina.", color = PrismColors.TextTertiary) },
                     modifier = Modifier.fillMaxWidth(), maxLines = 3,
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = PrismColors.TextPrimary, unfocusedTextColor = PrismColors.TextPrimary, focusedBorderColor = accent, unfocusedBorderColor = Color.White.copy(alpha = 0.25f), cursorColor = accent),
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = PrismColors.TextPrimary, unfocusedTextColor = PrismColors.TextPrimary, focusedBorderColor = accent, unfocusedBorderColor = PrismColors.TextTertiary, cursorColor = accent),
                 )
                 Spacer(Modifier.height(10.dp))
                 GlassButton("Remember this", enabled = newText.isNotBlank()) { scope.launch { graph.memory.add(newText); newText = "" } }
