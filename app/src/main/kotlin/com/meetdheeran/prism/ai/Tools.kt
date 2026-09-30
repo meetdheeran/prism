@@ -29,6 +29,8 @@ data class ToolResult(val json: JsonObject, val userVisible: String? = null) {
 /** Everything a tool may need at execution time. */
 class ToolContext(
     val app: Context,
+    /** The conversation this call belongs to, so long-running work (the phone agent) can report back into it. */
+    val conversationId: Long? = null,
     /** Attach an image the user is asking about (screenshot/photo) to the conversation. */
     val attachImage: suspend (Attachment) -> Unit,
 )

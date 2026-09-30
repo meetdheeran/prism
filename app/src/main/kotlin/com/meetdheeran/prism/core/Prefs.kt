@@ -144,6 +144,8 @@ data class Settings(
     val answerLength: String = "auto",
     val typewriterCps: Int = 90,
     val edgeLights: Boolean = true,
+    /** The user has read the phone agent's privacy notice and switched it on. */
+    val agentConsent: Boolean = false,
 )
 
 class Prefs(private val ctx: Context) {
@@ -202,6 +204,7 @@ class Prefs(private val ctx: Context) {
         val answerLength = stringPreferencesKey("answer_length")
         val typewriterCps = intPreferencesKey("typewriter_cps")
         val edgeLights = booleanPreferencesKey("edge_lights")
+        val agentConsent = booleanPreferencesKey("agent_consent")
     }
 
     private fun Preferences.toSettings() = Settings(
@@ -259,6 +262,7 @@ class Prefs(private val ctx: Context) {
         answerLength = this[K.answerLength] ?: "auto",
         typewriterCps = this[K.typewriterCps] ?: 90,
         edgeLights = this[K.edgeLights] ?: true,
+        agentConsent = this[K.agentConsent] ?: false,
     )
 
     val settings: Flow<Settings> = ctx.dataStore.data.map { it.toSettings() }
@@ -322,6 +326,7 @@ class Prefs(private val ctx: Context) {
             p[K.answerLength] = s.answerLength
             p[K.typewriterCps] = s.typewriterCps
             p[K.edgeLights] = s.edgeLights
+            p[K.agentConsent] = s.agentConsent
         }
     }
 }

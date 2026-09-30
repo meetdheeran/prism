@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -135,16 +136,18 @@ fun HomeScreen(nav: NavController, launch: LaunchRequest?, onLaunchConsumed: () 
         androidx.compose.runtime.SideEffect { com.meetdheeran.prism.assistant.AssistantPulse.publish(phase, level) }
         androidx.compose.runtime.DisposableEffect(Unit) { onDispose { com.meetdheeran.prism.assistant.AssistantPulse.clear() } }
 
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().padding(top = LocalIslandInset.current).navigationBarsPadding().imePadding()) {
             // Top bar
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 GlassIconButton(backdrop, Icons.Rounded.History, "History") { drawer = true }
                 Spacer(Modifier.width(10.dp))
                 LiquidGlass(backdrop, Modifier.weight(1f).pressable(scaleDown = 0.98f) { vm.newChat() }, RoundedCornerShape(22.dp), GlassStyle.Tile) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(settings.assistantName, style = PrismTypography.titleMedium, modifier = Modifier.weight(1f))
+                        Text(settings.assistantName, style = PrismTypography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
                         val model = Providers.modelFor(settings).substringAfterLast('/').ifBlank { "default" }
-                        Chip("${settings.provider.label} · ${model.take(18)}")
+                        // Capped so a long model name can't squeeze the assistant's name into one letter per line.
+                        Box(Modifier.widthIn(max = 150.dp)) { Chip(model) }
                     }
                 }
                 Spacer(Modifier.width(10.dp))

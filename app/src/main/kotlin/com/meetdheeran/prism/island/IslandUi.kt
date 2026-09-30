@@ -86,6 +86,10 @@ import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
 import kotlinx.coroutines.delay
 import kotlin.math.sin
+import com.meetdheeran.prism.agent.Agent
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.offset
@@ -97,6 +101,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.runtime.mutableStateOf
 import com.meetdheeran.prism.ui.theme.Appearance
 import com.meetdheeran.prism.ui.theme.NothingPalette
+import com.meetdheeran.prism.ui.theme.NothingFonts
 import com.meetdheeran.prism.ui.nothing.GlyphMatrix
 import com.meetdheeran.prism.ui.siri.Orb
 import com.meetdheeran.prism.ui.siri.Phase
@@ -108,10 +113,15 @@ import com.meetdheeran.prism.ui.siri.Phase
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}) {
+fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
     val backdrop = rememberBackdropState()
     val mode = when {
+        state.agent.confirm != null -> Mode.AGENT_CONFIRM
+        state.showUnlock -> Mode.UNLOCK
         state.expanded && state.media != null -> Mode.EXPANDED
+        state.agent.running && state.agentPanel -> Mode.AGENT_PANEL
+        state.agent.running -> Mode.AGENT
+        state.showAgentResult -> Mode.AGENT_RESULT
         state.activity?.kind == LiveActivity.Kind.CALL -> Mode.CALL
         state.showAi -> Mode.AI
         state.showPeek -> Mode.PEEK
@@ -123,23 +133,32 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     }
     val base = state.pillWidthDp.dp
     val baseH = state.pillHeightDp.dp
-    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.EXPANDED -> 348.dp }
-    val targetH = when (mode) { Mode.EXPANDED -> 156.dp; else -> baseH }
+    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
+    val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
+    val targetH = when (mode) {
+        Mode.EXPANDED -> 156.dp
+        Mode.AGENT_CONFIRM -> 158.dp
+        Mode.AGENT_PANEL -> 176.dp
+        Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines
+        Mode.UNLOCK -> baseH + 34.dp
+        else -> baseH
+    }
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
-    val shape = RoundedCornerShape(if (mode == Mode.EXPANDED) 34.dp else baseH / 2)
+    val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT
+    val shape = RoundedCornerShape(when { big -> 34.dp; mode == Mode.UNLOCK -> 26.dp; else -> baseH / 2 })
 
     // The Nothing look has no glass: its island is always a plain black pill.
     val lensMode = state.style == IslandStyle.LENS && !Appearance.nothing
     val lensRegistry = remember { LensRegistry() }
-    val radiusPx = with(LocalDensity.current) { (if (mode == Mode.EXPANDED) 34.dp else baseH / 2).toPx() }
+    val radiusPx = with(LocalDensity.current) { (if (big) 34.dp else baseH / 2).toPx() }
     val fallback = remember(state.media?.art) { lensFallback(state.media?.art) }
     // Split: while the pill shows one thing, a second (music, or a timer) pops off into its own bubble,
     // like the iPhone 18 Pro island. The two black shapes are drawn through a blur + alpha threshold
     // (a "metaball"), so while they're close a liquid neck stretches between them and then snaps.
     val secondary = if (!state.split) null else when {
-        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.MEDIA -> null
+        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK -> null
         state.media != null -> Second.MEDIA
         state.activity != null && mode != Mode.ACTIVITY && state.activity.kind != LiveActivity.Kind.CALL -> Second.TIMER
         else -> null
@@ -171,7 +190,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
             }
         }
         Box(Modifier.offset(x = side)) {
-            PillBody(state, mode, w, h, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onToggleExpand, onAssistant, onActivityTap, onPeekTap)
+            PillBody(state, mode, w, h, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
         }
         if (splitting) {
             val sec = secondary ?: lastSecondary.value
@@ -237,6 +256,7 @@ private fun PillBody(
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
     onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
+    onAgentStop: () -> Unit, onAgentAnswer: (Boolean) -> Unit, onAgentTap: () -> Unit, onAgentResultTap: () -> Unit,
 ) {
     Box {
         if (bare) {
@@ -267,6 +287,11 @@ private fun PillBody(
                     detectTapGestures(
                         onTap = {
                             when {
+                                // Tapping the island while the agent works stops it.
+                                // Tap while it works opens the step panel (with Stop); it no longer stops outright.
+                                mode == Mode.AGENT -> onAgentTap()
+                                mode == Mode.AGENT_RESULT -> onAgentResultTap()
+                                mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.UNLOCK -> Unit
                                 mode == Mode.CALL || mode == Mode.ACTIVITY -> state.activity?.let(onActivityTap)
                                 mode == Mode.PEEK -> state.peek?.let(onPeekTap)
                                 mode == Mode.EMPTY || mode == Mode.AI -> onAssistant()
@@ -288,6 +313,11 @@ private fun PillBody(
                     Mode.ACTIVITY -> state.activity?.let { ActivityRow(it) }
                     Mode.EXPANDED -> state.media?.let { Expanded(it) }
                     Mode.AI -> AiRow(state.ai, state.aiLevel)
+                    Mode.AGENT -> AgentRow(state.agent)
+                    Mode.AGENT_CONFIRM -> state.agent.confirm?.let { AgentConfirmCard(it, onAgentAnswer) }
+                    Mode.AGENT_RESULT -> AgentResultCard(state.agent)
+                    Mode.AGENT_PANEL -> AgentPanelCard(state.agent, onStop = onAgentStop, onHide = onAgentTap)
+                    Mode.UNLOCK -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { UnlockGlyph() }
                     Mode.PEEK -> state.peek?.let { PeekRow(it) }
                 }
             }
@@ -295,7 +325,165 @@ private fun PillBody(
     }
 }
 
-private enum class Mode { EMPTY, MEDIA, CHARGING, EVENT, CALL, ACTIVITY, EXPANDED, AI, PEEK }
+private enum class Mode { EMPTY, MEDIA, CHARGING, EVENT, CALL, ACTIVITY, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK }
+
+/** The agent's finished answer, big enough to read: stays 15 s, tap outside to close, tap it to open the chat. */
+@Composable
+private fun AgentResultCard(a: Agent.State) {
+    val nothing = Appearance.nothing
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (a.success) Icons.Rounded.Check else Icons.Rounded.Close, null, tint = if (a.success) Ink.good else Ink.bad, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            val head = if (a.success) "Done" else "Couldn't finish"
+            Text(if (nothing) head.uppercase() else head, style = PrismTypography.labelMedium, color = Ink.secondary, maxLines = 1)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            a.result.orEmpty(),
+            style = if (nothing) PrismTypography.bodyMedium.copy(fontFamily = NothingFonts.Mono, fontSize = 13.sp, lineHeight = 19.sp) else PrismTypography.bodyMedium,
+            color = Color.White, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(if (nothing) "TAP TO OPEN · TAP OUTSIDE TO CLOSE" else "Tap to open · tap outside to close", style = PrismTypography.labelSmall, color = Ink.tertiary, maxLines = 1)
+    }
+}
+
+/** Tap on the island while the agent works: what it's doing, and a Stop button (tap outside to hide). */
+@Composable
+private fun AgentPanelCard(a: Agent.State, onStop: () -> Unit, onHide: () -> Unit) {
+    val nothing = Appearance.nothing
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp)) {
+        val head = "Prism agent · step ${a.step}" + if (a.appLabel.isNotBlank()) " · ${a.appLabel}" else ""
+        Text(if (nothing) head.uppercase() else head, style = PrismTypography.labelSmall, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(6.dp))
+        Text(a.goal, style = PrismTypography.titleSmall, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(4.dp))
+        Text(a.label.ifBlank { "Working" }, style = PrismTypography.bodySmall, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val shape = RoundedCornerShape(50)
+            Box(
+                Modifier.weight(1f).height(38.dp).clip(shape).border(1.dp, Color.White.copy(alpha = 0.3f), shape).pressable(onClick = onHide),
+                contentAlignment = Alignment.Center,
+            ) { Text(if (nothing) "HIDE" else "Hide", style = PrismTypography.labelLarge, color = Color.White) }
+            Box(
+                Modifier.weight(1f).height(38.dp).clip(shape).background(if (nothing) NothingPalette.Red else Color(0xFFFF453A)).pressable(onClick = onStop),
+                contentAlignment = Alignment.Center,
+            ) { Text(if (nothing) "STOP" else "Stop", style = PrismTypography.labelLarge, color = Color.White) }
+        }
+    }
+}
+
+/**
+ * The unlock moment, after Face ID on the iPhone: a face glyph (corner brackets, eyes, nose, a smile
+ * that draws itself) that turns into a padlock springing open. Dotted strokes in the Nothing look.
+ */
+@Composable
+private fun UnlockGlyph() {
+    val t = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { t.animateTo(1f, tween(1_450, easing = LinearEasing)) }
+    val nothing = Appearance.nothing
+    Canvas(Modifier.size(38.dp)) {
+        val p = t.value
+        val s = size.minDimension
+        val sw = s * 0.06f
+        val dots = if (nothing) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(0.01f, sw * 1.7f)) else null
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = sw, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round, pathEffect = dots)
+        val ink = Color.White
+        val faceAlpha = if (p < 0.55f) 1f else (1f - (p - 0.55f) / 0.12f).coerceIn(0f, 1f)
+        val lockAlpha = ((p - 0.6f) / 0.12f).coerceIn(0f, 1f)
+        if (faceAlpha > 0f) {
+            // Brackets breathe inward while it "scans".
+            val scan = if (p < 0.5f) 0.04f * sin(p * 25f) else 0f
+            val m = s * (0.06f + scan)
+            val len = s * 0.24f
+            val r = s * 0.1f
+            fun corner(x: Float, y: Float, dx: Float, dy: Float) {
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(x, y + dy * len); lineTo(x, y + dy * r)
+                    quadraticBezierTo(x, y, x + dx * r, y); lineTo(x + dx * len, y)
+                }
+                drawPath(path, ink.copy(alpha = faceAlpha), style = stroke)
+            }
+            corner(m, m, 1f, 1f); corner(s - m, m, -1f, 1f); corner(m, s - m, 1f, -1f); corner(s - m, s - m, -1f, -1f)
+            // Eyes, nose, and a smile that draws itself.
+            drawLine(ink.copy(alpha = faceAlpha), androidx.compose.ui.geometry.Offset(s * 0.36f, s * 0.36f), androidx.compose.ui.geometry.Offset(s * 0.36f, s * 0.44f), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(ink.copy(alpha = faceAlpha), androidx.compose.ui.geometry.Offset(s * 0.64f, s * 0.36f), androidx.compose.ui.geometry.Offset(s * 0.64f, s * 0.44f), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+            val nose = androidx.compose.ui.graphics.Path().apply { moveTo(s * 0.5f, s * 0.38f); lineTo(s * 0.5f, s * 0.56f); lineTo(s * 0.45f, s * 0.56f) }
+            drawPath(nose, ink.copy(alpha = faceAlpha), style = stroke)
+            val smile = ((p - 0.15f) / 0.3f).coerceIn(0f, 1f)
+            if (smile > 0f) drawArc(ink.copy(alpha = faceAlpha), 150f - 120f * smile + 120f, 120f * smile, false,
+                topLeft = androidx.compose.ui.geometry.Offset(s * 0.32f, s * 0.44f), size = androidx.compose.ui.geometry.Size(s * 0.36f, s * 0.24f), style = stroke)
+        }
+        if (lockAlpha > 0f) {
+            val open = ((p - 0.72f) / 0.2f).coerceIn(0f, 1f)
+            val bodyTop = s * 0.48f
+            drawRoundRect(ink.copy(alpha = lockAlpha), topLeft = androidx.compose.ui.geometry.Offset(s * 0.26f, bodyTop), size = androidx.compose.ui.geometry.Size(s * 0.48f, s * 0.36f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.08f))
+            // Shackle: the right leg lifts out of the body as it springs open.
+            val lift = s * 0.12f * open
+            val shackle = androidx.compose.ui.graphics.Path().apply {
+                moveTo(s * 0.36f, bodyTop)
+                lineTo(s * 0.36f, s * 0.34f - lift)
+                cubicTo(s * 0.36f, s * 0.16f - lift, s * 0.64f, s * 0.16f - lift, s * 0.64f, s * 0.34f - lift)
+                lineTo(s * 0.64f, s * 0.40f - lift)
+            }
+            drawPath(shackle, ink.copy(alpha = lockAlpha), style = androidx.compose.ui.graphics.drawscope.Stroke(width = sw, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            drawCircle(if (nothing) NothingPalette.Red else Color.Black, s * 0.045f, androidx.compose.ui.geometry.Offset(s * 0.5f, bodyTop + s * 0.16f), alpha = lockAlpha)
+        }
+    }
+}
+
+/** Agent working: a thinking glyph/orb, the current step, and a small stop square (tap anywhere stops). */
+@Composable
+private fun AgentRow(a: Agent.State) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (Appearance.nothing) GlyphMatrix(phase = Phase.Thinking, size = 20.dp, grid = 11) else Orb(phase = Phase.Thinking, size = 20.dp)
+        Spacer(Modifier.width(8.dp))
+        val label = a.label.ifBlank { "Working" }
+        Text(if (Appearance.nothing) label.uppercase() else label, style = PrismTypography.labelMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(6.dp))
+        Box(Modifier.size(16.dp).border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(6.dp).background(Color.White, RoundedCornerShape(1.dp)))
+        }
+    }
+}
+
+/**
+ * The agent's "may I?" — exactly what will happen, and two buttons. Nothing irreversible happens
+ * until Allow is tapped; Cancel (or 90 s of silence) ends the task with nothing sent.
+ */
+@Composable
+private fun AgentConfirmCard(c: Agent.Confirm, onAnswer: (Boolean) -> Unit) {
+    val nothing = Appearance.nothing
+    val verb = c.text.trim().substringBefore(' ').lowercase().replaceFirstChar { it.uppercase() }
+    val allowLabel = if (verb in setOf("Send", "Post", "Delete", "Call", "Share", "Reply", "Submit")) verb else "Allow"
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp)) {
+        val header = "Prism agent · ${c.appLabel}"
+        Text(if (nothing) header.uppercase() else header, style = PrismTypography.labelSmall, color = Ink.secondary, maxLines = 1)
+        Spacer(Modifier.height(6.dp))
+        Text(c.text, style = PrismTypography.titleSmall, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val shape = RoundedCornerShape(50)
+            Box(
+                Modifier.weight(1f).height(38.dp).clip(shape).border(1.dp, Color.White.copy(alpha = 0.3f), shape).pressable { onAnswer(false) },
+                contentAlignment = Alignment.Center,
+            ) { Text(if (nothing) "CANCEL" else "Cancel", style = PrismTypography.labelLarge, color = Color.White) }
+            Box(
+                Modifier.weight(1f).height(38.dp).clip(shape).background(if (nothing) NothingPalette.Red else Color(0xFF30D158)).pressable { onAnswer(true) },
+                contentAlignment = Alignment.Center,
+            ) { Text(if (nothing) allowLabel.uppercase() else allowLabel, style = PrismTypography.labelLarge, color = Color.White) }
+        }
+    }
+}
+
+@Composable
+private fun AgentResultRow(a: Agent.State) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (a.success) Icons.Rounded.Check else Icons.Rounded.Close, null, tint = if (a.success) Ink.good else Ink.bad, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(a.result.orEmpty(), style = PrismTypography.labelMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).basicMarquee())
+    }
+}
 
 /**
  * The island is black in every look and theme, so its colours are fixed rather than taken from the

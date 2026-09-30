@@ -62,6 +62,7 @@ ksp {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val bom = platform("androidx.compose:compose-bom:2024.09.03")
     implementation(bom)
     implementation("androidx.compose.ui:ui")

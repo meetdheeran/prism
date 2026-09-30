@@ -287,7 +287,7 @@ class AssistantEngine(private val graph: AppGraph) : Assistant {
         }
 
         emit(EngineEvent.ToolRunning(call.name, labelFor(call.name, args)))
-        val ctx = ToolContext(graph.app) { attachment -> turn.pendingImages += attachment }
+        val ctx = ToolContext(graph.app, turn.conversationId) { attachment -> turn.pendingImages += attachment }
         val result = try {
             withTimeoutOrNull(TOOL_TIMEOUT_MS) { handler.execute(args, ctx) }
                 ?: ToolResult.fail("The '${call.name}' tool timed out.")
@@ -338,7 +338,7 @@ class AssistantEngine(private val graph: AppGraph) : Assistant {
     // ---------------------------------------------------------------- persistence
 
     private fun titleFor(turn: Turn): String {
-        val t = turn.text.trim().replace(Regex("\\s+"), " ")
+        val t = turn.text.substringBefore("\n\n[Text currently visible on screen]").trim().replace(Regex("\\s+"), " ")
         if (t.isNotEmpty()) return t.take(40)
         val first = turn.attachments.firstOrNull() ?: return "New conversation"
         return when {
@@ -466,8 +466,17 @@ class AssistantEngine(private val graph: AppGraph) : Assistant {
                 else -> null
             }
         }
-        val firstUser = mapped.indexOfFirst { it.role == Role.USER }
-        return if (firstUser <= 0) mapped else mapped.drop(firstUser)
+        // The phone agent reports its outcome as a later assistant message; fold back-to-back plain
+        // assistant messages into one so providers that insist on alternating turns accept the history.
+        val merged = ArrayList<ChatMessage>(mapped.size)
+        for (m in mapped) {
+            val prev = merged.lastOrNull()
+            if (prev != null && prev.role == Role.ASSISTANT && m.role == Role.ASSISTANT && prev.toolCalls.isEmpty() && m.toolCalls.isEmpty()) {
+                merged[merged.size - 1] = prev.copy(text = listOf(prev.text, m.text).filter { it.isNotBlank() }.joinToString("\n"))
+            } else merged += m
+        }
+        val firstUser = merged.indexOfFirst { it.role == Role.USER }
+        return if (firstUser <= 0) merged else merged.drop(firstUser)
     }
 
     private fun parseToolCalls(raw: String?): List<ToolCall> {

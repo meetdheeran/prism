@@ -138,6 +138,17 @@
 
         <service android:name=".island.IslandService" android:exported="false" />
         <service android:name=".aod.AodService" android:exported="false" />
+        <!-- Phone agent. Android only binds it after the user switches it on in Accessibility settings. -->
+        <service
+            android:name=".agent.AgentAccessibilityService"
+            android:exported="true"
+            android:label="@string/agent_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/agent_accessibility" />
+        </service>
         <!-- Always-on display: its own task so closing it lands on the lock screen, not in Prism. -->
         <activity
             android:name=".aod.AodActivity"
@@ -145,8 +156,6 @@
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.meetdheeran.prism.aod"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.Prism.Aod" />
         <service android:name=".control.ControlCenterService" android:exported="false" />

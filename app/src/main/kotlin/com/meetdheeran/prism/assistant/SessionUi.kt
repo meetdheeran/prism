@@ -111,6 +111,12 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
     fun begin(autoListen: Boolean) {
         response = ""; error = null; chips = emptyList(); citations = emptyList(); input = ""; streaming = false
         screenshot = null; screenBitmap = null; structureText = null; screenshotUsed = false; conversationId = null
+        asked = ""
+        // The phone agent came back with a question: continue that conversation and show it.
+        com.meetdheeran.prism.agent.AgentFollowUp.take()?.let { (conv, question) ->
+            conversationId = conv
+            response = question
+        }
         scope.launch {
             settings.value = graph.prefs.settings.first()
             if (autoListen && !graph.assistant.isConfigured()) {
@@ -139,7 +145,17 @@ class SessionModel(private val ctx: Context, private val graph: AppGraph) {
         speech.start(s.voiceInput, onFinal = { if (isEndPhrase(it)) onEnd?.invoke() else if (it.isNotBlank()) send(it) }, transcribe = transcriber)
     }
 
-    private val screenWords = Regex("\\b(screen|this|here|see|look|page|photo|image|picture|read|what'?s on|showing|displayed|text)\\b", RegexOption.IGNORE_CASE)
+    /**
+     * Only phrases that are really about the screen pull its text in. Single words like "text" or
+     * "this" also start ordinary requests ("text Anushka hi", "set this alarm"), and grabbing the
+     * screen for those wastes tokens and pastes someone else's chat into the message.
+     */
+    private val screenWords = Regex(
+        "(on|of|from|in) (my|the|this) screen|\\bscreen(shot)?\\b|what'?s (on|this|here|that)|what (is|am i) (this|that|looking at|seeing)|" +
+            "\\bthis (page|screen|message|email|mail|chat|image|photo|picture|post|article|text|pdf|document|app|website|site)\\b|" +
+            "\\b(look at|read|summari[sz]e|explain|translate|check) (this|it|that|what i)|\\bsee (this|my screen)",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun send(text: String) {
         val t = text.trim()

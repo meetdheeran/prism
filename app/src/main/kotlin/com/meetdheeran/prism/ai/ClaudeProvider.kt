@@ -62,11 +62,14 @@ class ClaudeProvider : AiProvider {
         val key = request.apiKey
         if (!key.startsWith("sk-ant-")) { emit(AiEvent.Error(BAD_KEY, retryable = false)); return@flow }
         val model = request.model.ifBlank { DEFAULT_MODEL }
-        val useFallback = model.startsWith("claude-opus-5") || model.startsWith("claude-fable")
+        val useFallback = model.startsWith("claude-opus-5") || model.startsWith("claude-fable") || model.startsWith("claude-sonnet-5-5")
         val (system, messages) = buildMessages(request)
         val body = buildJsonObject {
             put("model", model)
-            put("max_tokens", request.maxOutputTokens.coerceAtLeast(1024))
+            // Current Claude models always think, and thinking counts toward max_tokens: a small cap
+            // (the agent asks for ~700) would cut the reply or tool call off. Billing is per token used,
+            // so a roomy ceiling costs nothing extra; streaming keeps it clear of HTTP timeouts.
+            put("max_tokens", maxOf(request.maxOutputTokens, if (thinksAlways(model)) 16_000 else 1024))
             put("stream", true)
             if (system.isNotBlank()) put("system", system)
             put("messages", messages)
@@ -82,6 +85,8 @@ class ClaudeProvider : AiProvider {
                 }
             }
             if (tools.isNotEmpty()) put("tools", tools)
+            // "auto" is the only tool_choice current models accept; parallel calls can still be switched off.
+            if (request.singleToolCall && request.tools.isNotEmpty()) putJsonObject("tool_choice") { put("type", "auto"); put("disable_parallel_tool_use", true) }
             if (supportsEffort(model)) putJsonObject("output_config") { put("effort", "medium") }
             if (useFallback) put("fallbacks", "default")
         }
@@ -232,17 +237,22 @@ class ClaudeProvider : AiProvider {
         private const val VERSION = "2023-06-01"
         private const val FALLBACK_BETA = "server-side-fallback-2026-07-01"
         private const val BAD_KEY = "That doesn't look like a Claude key (they start with \"sk-ant-\"). Create one at console.anthropic.com."
-        const val DEFAULT_MODEL = "claude-opus-5"
+        const val DEFAULT_MODEL = "claude-opus-5-5"
 
+        /** First entry is the default when the user hasn't picked one. */
         private val CATALOGUE = listOf(
-            ModelInfo("claude-opus-5", "Claude Opus 5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Default · $5 in / $25 out per 1M tokens · 1M context"),
-            ModelInfo("claude-sonnet-5", "Claude Sonnet 5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Faster and cheaper · $2 / $10 per 1M"),
+            ModelInfo("claude-opus-5-5", "Claude Opus 5.5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Default · $4 in / $20 out per 1M tokens · 1M context"),
+            ModelInfo("claude-sonnet-5-5", "Claude Sonnet 5.5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Faster and cheaper · $2 / $10 per 1M"),
             ModelInfo("claude-haiku-4-5", "Claude Haiku 4.5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Cheapest · $1 / $5 per 1M · 200K context"),
             ModelInfo("claude-fable-5-1", "Claude Fable 5.1", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Most capable · $10 / $50 per 1M"),
+            ModelInfo("claude-opus-5", "Claude Opus 5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Previous Opus · $5 / $25 per 1M"),
+            ModelInfo("claude-sonnet-5", "Claude Sonnet 5", supportsVision = true, supportsTools = true, supportsPdf = true, supportsSearch = true, note = "Previous Sonnet · $2 / $10 per 1M"),
         )
 
         private val MODERN = Regex("^claude-(opus-5|opus-4-[678]|sonnet-5|sonnet-4-6|fable|mythos)")
         private fun supportsEffort(model: String) = MODERN.containsMatchIn(model)
+        /** Models with thinking on by default (it can't be switched off on Opus 5.5 / Sonnet 5.5 / Fable). */
+        private fun thinksAlways(model: String) = Regex("^claude-(opus-5|sonnet-5|fable|mythos)").containsMatchIn(model)
         private fun supportsSearch(model: String) = true
         private fun searchToolType(model: String) = if (MODERN.containsMatchIn(model)) "web_search_20260209" else "web_search_20250305"
     }

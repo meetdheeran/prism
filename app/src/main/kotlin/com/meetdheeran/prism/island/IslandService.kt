@@ -42,6 +42,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.meetdheeran.prism.assistant.AssistantPulse
+import com.meetdheeran.prism.agent.Agent
 import com.meetdheeran.prism.ui.siri.Phase
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -79,6 +80,12 @@ data class IslandState(
     val alwaysOn: Boolean = false,
     /** Two things at once → a pill plus a detached bubble, like the iPhone island. */
     val split: Boolean = true,
+    /** The phone agent: its current step, a pending OK, or the result it just finished with. */
+    val agent: Agent.State = Agent.State(),
+    /** The agent's step panel is open (tap on the island while it works). */
+    val agentPanel: Boolean = false,
+    /** elapsedRealtime of the last unlock; the island plays the Face-ID-style unlock for a moment. */
+    val unlockAt: Long = 0L,
     /** Bumped when a timed pop (bloom, event, peek) expires, so the UI re-reads the clock. */
     val tick: Long = 0L,
 ) {
@@ -86,7 +93,12 @@ data class IslandState(
     val showEvent: Boolean get() = event != null && SystemClock.elapsedRealtime() - event.at < 3_500
     val showPeek: Boolean get() = peek != null && SystemClock.elapsedRealtime() - peekAt < 3_500
     val showAi: Boolean get() = ai != Phase.Idle
-    val hasContent: Boolean get() = alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
+    /** The agent's answer stays up for 15 s (long enough to read) unless tapped away. */
+    val showAgentResult: Boolean get() = !agent.running && agent.result != null && !agent.resultDismissed && SystemClock.elapsedRealtime() - agent.finishedAt < 15_000
+    val showUnlock: Boolean get() = unlockAt > 0 && SystemClock.elapsedRealtime() - unlockAt < 1_700
+    /** Cards that close when you tap anywhere else on the screen. */
+    val wantsOutsideTaps: Boolean get() = expanded || showAgentResult || (agentPanel && agent.running)
+    val hasContent: Boolean get() = showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
 }
 
 /** Battery broadcasts as flows. */
@@ -129,6 +141,10 @@ class IslandService : Service() {
     private val events = MutableStateFlow<IslandEvent?>(null)
     private val peeks = MutableStateFlow<Pair<ShadeItem?, Long>>(null to 0L)
     private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private var unlockReceiver: BroadcastReceiver? = null
+    private var panelJob: Job? = null
+    /** Whether the window currently asks for taps outside it (only while a closable card is up). */
+    private var watchingOutside = false
     private var btReceiver: BroadcastReceiver? = null
     private var collapseJob: Job? = null
     private var showing = false
@@ -171,6 +187,16 @@ class IslandService : Service() {
             }
         }
         scope.launch { PrismNotificationListener.peek.collect { peeks.value = it to SystemClock.elapsedRealtime() } }
+        // Unlocked (face, fingerprint or PIN): play the Face-ID-style unlock on the island. Apps can't
+        // draw over the lock screen itself, so this is the first moment the island is visible again.
+        unlockReceiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                state.value = state.value.copy(unlockAt = SystemClock.elapsedRealtime())
+                sync()
+                scope.launch { delay(1_800); state.value = state.value.copy(tick = SystemClock.elapsedRealtime()); sync() }
+            }
+        }
+        registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
         ContextCompat.registerReceiver(this, btReceiver!!, IntentFilter(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED), ContextCompat.RECEIVER_EXPORTED)
         scope.launch {
             combine(graph.prefs.settings, MediaWatcher.now, PrismNotificationListener.activities, ch.info, ch.connectedAt) { s: Settings, np, acts, bat, at ->
@@ -195,15 +221,21 @@ class IslandService : Service() {
             .combine(AssistantPulse.state) { (st, s), ai ->
                 // The system session draws its own island panel; don't stack a second pill under it.
                 (if (s.islandShowAssistant && !ai.sessionOpen) st.copy(ai = ai.phase, aiLevel = ai.level) else st) to s.islandOffsetDp
-            }.collect { (next, offsetDp) ->
+            }.combine(Agent.state) { (st, off), agent -> st.copy(agent = agent) to off }
+            .collect { (next, offsetDp) ->
                 val newOffset = (offsetDp * resources.displayMetrics.density).toInt()
                 val offsetChanged = newOffset != offsetPx
                 offsetPx = newOffset
-                state.value = next.copy(expanded = state.value.expanded && next.media != null)
-                if (offsetChanged && showing) host?.update(params(state.value.expanded))
+                state.value = next.copy(
+                    expanded = state.value.expanded && next.media != null,
+                    agentPanel = state.value.agentPanel && next.agent.running,
+                    unlockAt = state.value.unlockAt,
+                )
+                if (offsetChanged && showing) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
                 sync()
-                if (next.showChargeBloom || next.showEvent || next.showPeek) {
-                    delay(3_600)
+                refreshOutsideWatch()
+                if (next.showChargeBloom || next.showEvent || next.showPeek || next.showAgentResult) {
+                    delay(if (next.showAgentResult) 15_300 else 3_600)
                     state.value = state.value.copy(tick = SystemClock.elapsedRealtime())
                     sync()
                 }
@@ -276,19 +308,56 @@ class IslandService : Service() {
                         onAssistant = { openAssistant() },
                         onActivityTap = { a -> runCatching { a.contentIntent?.send() } },
                         onPeekTap = { n -> runCatching { n.contentIntent?.send() } },
+                        onAgentStop = { setAgentPanel(false); Agent.stop() },
+                        onAgentAnswer = { allow -> Agent.answer(allow) },
+                        onAgentTap = { setAgentPanel(!state.value.agentPanel) },
+                        onAgentResultTap = { openAgentConversation() },
                     )
                 }
             }
         }
         h.view?.setOnTouchListener { _, ev ->
-            if (ev.action == MotionEvent.ACTION_OUTSIDE && state.value.expanded) setExpanded(false)
+            if (ev.action == MotionEvent.ACTION_OUTSIDE) {
+                val s = state.value
+                when {
+                    s.showAgentResult -> Agent.dismissResult()
+                    s.agentPanel -> setAgentPanel(false)
+                    s.expanded -> setExpanded(false)
+                }
+            }
             false
+        }
+    }
+
+    /** Ask for outside taps only while a closable card is showing; otherwise the window stays out of the way. */
+    private fun refreshOutsideWatch() {
+        val want = state.value.wantsOutsideTaps
+        if (showing && want != watchingOutside) {
+            host?.update(params(want))
+            watchingOutside = want
+        }
+    }
+
+    private fun setAgentPanel(open: Boolean) {
+        state.value = state.value.copy(agentPanel = open)
+        refreshOutsideWatch()
+        panelJob?.cancel()
+        if (open) panelJob = scope.launch { delay(6_000); setAgentPanel(false) }
+    }
+
+    private fun openAgentConversation() {
+        val conv = Agent.state.value.conversationId
+        Agent.dismissResult()
+        runCatching {
+            startActivity(Intent(this, com.meetdheeran.prism.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).apply {
+                if (conv != null) putExtra(com.meetdheeran.prism.MainActivity.EXTRA_CONVERSATION, conv)
+            })
         }
     }
 
     private fun setExpanded(expanded: Boolean) {
         state.value = state.value.copy(expanded = expanded)
-        host?.update(params(expanded))
+        host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps
         collapseJob?.cancel()
         if (expanded) collapseJob = scope.launch { delay(5_000); setExpanded(false) }
         scope.launch { delay(350); refreshLens() }
@@ -310,6 +379,7 @@ class IslandService : Service() {
         charging?.stop()
         wifiCallback?.let { runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         btReceiver?.let { runCatching { unregisterReceiver(it) } }
+        unlockReceiver?.let { runCatching { unregisterReceiver(it) } }
         scope.cancel()
         BackgroundNotice.stop(this)
         super.onDestroy()

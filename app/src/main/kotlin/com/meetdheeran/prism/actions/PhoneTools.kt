@@ -54,6 +54,7 @@ object PhoneTools {
         registry.register(*DeviceTools.all(graph).toTypedArray())
         registry.register(*ContextTools.all(graph).toTypedArray())
         registry.register(*ReminderTools.all(graph).toTypedArray())
+        registry.register(*AgentTools.all().toTypedArray())
     }
 
     private fun apps(graph: AppGraph): List<ToolHandler> = listOf(

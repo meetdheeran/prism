@@ -20,6 +20,11 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -77,6 +82,9 @@ class PrismSession(ctx: Context) : VoiceInteractionSession(ctx), LifecycleOwner,
         savedStateController.performRestore(null)
     }
 
+    /** The phone agent works on the app underneath, so the sheet steps aside the moment it starts. */
+    private var agentWatch: kotlinx.coroutines.Job? = null
+
     override fun onCreate() {
         super.onCreate()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
@@ -109,11 +117,17 @@ class PrismSession(ctx: Context) : VoiceInteractionSession(ctx), LifecycleOwner,
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        agentWatch?.cancel()
+        agentWatch = lifecycleScope.launch {
+            // Only a run that starts while this sheet is up; one already running isn't ours to hide for.
+            com.meetdheeran.prism.agent.Agent.state.map { it.running }.distinctUntilChanged().drop(1).collect { running -> if (running) hide() }
+        }
         model.begin(autoListen = true)
     }
 
     override fun onHide() {
         super.onHide()
+        agentWatch?.cancel()
         model.end()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
     }

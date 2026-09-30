@@ -40,6 +40,8 @@ class PrismApp : Application() {
         // Overlay services the user left on come back with the app (they die with the process on reinstall).
         graph.scope.launch {
             runCatching { ReminderScheduler.rescheduleAll(this@PrismApp) }
+            val selected = graph.prefs.current().provider
+            com.meetdheeran.prism.ai.Providers.providerWithKey(this@PrismApp, selected)?.let { p -> graph.prefs.update { it.copy(provider = p) } }
             val s = graph.prefs.current()
             runCatching {
                 if (s.controlCenterEnabled) ContextCompat.startForegroundService(this@PrismApp, Intent(this@PrismApp, ControlCenterService::class.java).setAction("start"))

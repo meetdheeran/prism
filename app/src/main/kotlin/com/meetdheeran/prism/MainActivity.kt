@@ -14,6 +14,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
 import com.meetdheeran.prism.ai.Attachment
 import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.Settings
@@ -44,7 +48,18 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(style, style)
             }
             PrismTheme(accent = Color(settings.accentArgb)) {
-                CompositionLocalProvider(LocalTilt provides tilt) {
+                // The island pill sits over the camera; when it's always shown, push screen content
+                // below it so it never covers a top bar. Pill = cutout height + user tweak, at the offset.
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val cutoutPx = WindowInsets.displayCutout.getTop(density)
+                val statusPx = WindowInsets.statusBars.getTop(density)
+                val islandInset = if (settings.islandEnabled && settings.islandShowAssistant) {
+                    with(density) {
+                        val bottom = cutoutPx + (settings.islandExtraHeightDp + settings.islandOffsetDp).dp.roundToPx()
+                        (bottom - statusPx).coerceAtLeast(0).toDp() + 6.dp
+                    }
+                } else 0.dp
+                CompositionLocalProvider(LocalTilt provides tilt, com.meetdheeran.prism.ui.screens.LocalIslandInset provides islandInset) {
                     PrismNav(
                         startRoute = if (settings.onboardingDone) Routes.HOME else Routes.ONBOARDING,
                         launch = launch,

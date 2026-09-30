@@ -1,12 +1,16 @@
 package com.meetdheeran.prism.ui.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.meetdheeran.prism.ai.Attachment
+
+/** Extra top space so screen content clears the always-on island pill (0 when the island is off). */
+val LocalIslandInset = androidx.compose.runtime.compositionLocalOf { 0.dp }
 
 object Routes {
     const val HOME = "home"

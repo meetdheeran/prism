@@ -42,6 +42,13 @@ class AodActivity : ComponentActivity(), SensorEventListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Second line of defence: never draw over a phone that has a PIN but isn't locked right now
+        // (a double-tap would then open it). The service already waits for the lock; this is a backstop.
+        val km = getSystemService(android.app.KeyguardManager::class.java)
+        if (km.isDeviceSecure && !km.isKeyguardLocked) {
+            finish()
+            return
+        }
         AodState.showing = true
         setShowWhenLocked(true)
         setTurnScreenOn(true)
@@ -61,7 +68,7 @@ class AodActivity : ComponentActivity(), SensorEventListener {
                 window.attributes = window.attributes.apply { screenBrightness = settings.aodBrightness.coerceIn(1, 30) / 100f }
             }
             PrismTheme {
-                AodScreen(settings, onDismiss = { AodState.suppressed = false; finish() })
+                AodScreen(settings, onDismiss = ::openFromAod)
             }
         }
 
@@ -74,6 +81,23 @@ class AodActivity : ComponentActivity(), SensorEventListener {
                 if (AodService.blockedReason(this@AodActivity, graph.prefs.current()) != null) goDark()
             }
         }
+    }
+
+    /**
+     * Double-tap: ask Android for the unlock prompt (PIN / fingerprint) instead of just closing —
+     * closing alone lets the phone doze again. The AOD closes whether the unlock succeeds or not;
+     * it never opens the phone by itself.
+     */
+    private fun openFromAod() {
+        AodState.suppressed = false
+        val km = getSystemService(android.app.KeyguardManager::class.java)
+        if (!km.isKeyguardLocked) { finish(); return }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        km.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() = finish()
+            override fun onDismissCancelled() = finish()
+            override fun onDismissError() = finish()
+        })
     }
 
     override fun onResume() {

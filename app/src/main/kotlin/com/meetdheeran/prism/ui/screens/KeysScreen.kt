@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.meetdheeran.prism.ai.Providers
+import com.meetdheeran.prism.core.AppGraph
 import com.meetdheeran.prism.core.Provider
 import com.meetdheeran.prism.core.SecureStore
 import com.meetdheeran.prism.ui.glass.BackdropState
@@ -102,7 +103,10 @@ private fun KeyCard(backdrop: BackdropState, provider: Provider, title: String, 
                 GlassButton("Save", enabled = text.isNotBlank()) {
                     if (!text.startsWith(prefix)) { status = "That doesn't look like a $title key (expected to start with \"$prefix\")."; return@GlassButton }
                     SecureStore.put(ctx, keyName, text)
-                    saved = true; savedMask = SecureStore.mask(text); text = ""; status = "Saved."
+                    saved = true; savedMask = SecureStore.mask(text); text = ""
+                    // A key you just added is the AI you want to use: select it.
+                    scope.launch { AppGraph.get(ctx).prefs.update { it.copy(provider = provider) } }
+                    status = "Saved. Prism now uses $title."
                 }
                 Spacer(Modifier.width(8.dp))
                 GlassButton(if (testing) "Testing…" else "Test", filled = false, enabled = !testing && (saved || text.isNotBlank())) {
@@ -115,7 +119,13 @@ private fun KeyCard(backdrop: BackdropState, provider: Provider, title: String, 
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                if (saved) GlassButton("Remove", danger = true) { SecureStore.remove(ctx, keyName); saved = false; savedMask = ""; status = "Removed." }
+                if (saved) GlassButton("Remove", danger = true) {
+                    SecureStore.remove(ctx, keyName); saved = false; savedMask = ""; status = "Removed."
+                    scope.launch {
+                        val prefs = AppGraph.get(ctx).prefs
+                        Providers.providerWithKey(ctx, prefs.current().provider)?.let { p -> prefs.update { it.copy(provider = p) } }
+                    }
+                }
             }
             status?.let {
                 Spacer(Modifier.height(8.dp))

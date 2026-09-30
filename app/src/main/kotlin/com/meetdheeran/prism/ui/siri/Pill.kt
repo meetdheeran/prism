@@ -53,6 +53,7 @@ import com.meetdheeran.prism.ui.theme.NothingFonts
 import com.meetdheeran.prism.ui.theme.NothingPalette
 import com.meetdheeran.prism.ui.nothing.Typewriter
 import androidx.compose.foundation.border
+import androidx.compose.ui.text.style.TextOverflow
 
 /**
  * The bottom pill: type or talk. The mic button becomes a stop button with a level ring while
@@ -210,7 +211,7 @@ fun Chip(label: String, accent: Boolean = false, onClick: (() -> Unit)? = null) 
         val shape = RoundedCornerShape(50)
         val m = Modifier.clip(shape).border(1.dp, if (accent) NothingPalette.Red else p.line, shape).padding(horizontal = 10.dp, vertical = 5.dp)
         Box(if (onClick != null) Modifier.pressable(onClick = onClick).then(m) else m) {
-            Text(label.take(48).uppercase(), style = TextStyle(fontSize = 10.sp, letterSpacing = 0.8.sp, fontFamily = NothingFonts.Mono, color = if (accent) NothingPalette.Red else p.text2))
+            Text(label.take(48).uppercase(), style = TextStyle(fontSize = 10.sp, letterSpacing = 0.8.sp, fontFamily = NothingFonts.Mono, color = if (accent) NothingPalette.Red else p.text2), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         return
     }
@@ -219,6 +220,6 @@ fun Chip(label: String, accent: Boolean = false, onClick: (() -> Unit)? = null) 
         .background(if (accent) a.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
         .padding(horizontal = 10.dp, vertical = 5.dp)
     Box(if (onClick != null) Modifier.pressable(onClick = onClick).then(base) else base) {
-        Text(label.take(48), style = TextStyle(fontSize = 12.sp, color = if (accent) Color.White else PrismColors.TextSecondary))
+        Text(label.take(48), style = TextStyle(fontSize = 12.sp, color = if (accent) Color.White else PrismColors.TextSecondary), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

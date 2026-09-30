@@ -2,4 +2,7 @@
 <resources>
     <!-- Working title. The user has not chosen a final name yet; change only this string to rename. -->
     <string name="app_name">Prism</string>
+    <string name="agent_accessibility_label">Prism phone agent</string>
+    <string name="agent_accessibility_summary">Lets Prism do tasks in other apps when you ask, like sending a message</string>
+    <string name="agent_accessibility_description">When you ask Prism to do something in another app (for example \"message Anushka on Zoom and say hi\"), this lets it read the buttons and text on the screen and tap or type for you, one step at a time. It only works while a task you asked for is running, asks you on the island before anything is sent, deleted or paid, and never opens banking, payment or password apps or reads password fields. To decide each step, what is on the screen is sent to the AI provider you chose in Prism (Gemini by default).</string>
 </resources>

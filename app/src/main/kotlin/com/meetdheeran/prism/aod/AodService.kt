@@ -39,12 +39,19 @@ class AodService : Service() {
                 Intent.ACTION_SCREEN_OFF -> onScreenOff()
                 // A real wake (power button, fingerprint, notification) lifts a pocket/night sleep.
                 Intent.ACTION_USER_PRESENT -> AodState.suppressed = false
-                Intent.ACTION_SCREEN_ON -> if (!AodState.launching) AodState.suppressed = false
+                Intent.ACTION_SCREEN_ON -> if (!AodState.launching) {
+                    AodState.suppressed = false
+                    cancelCheck() // woken before the lock engaged: no AOD this time
+                }
+                ACTION_CHECK -> onCheck()
             }
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /** elapsedRealtime after which a still-unlocked phone means "no AOD this time". */
+    private var lockDeadline = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "stop") {
@@ -57,14 +64,16 @@ class AodService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        registerReceiver(receiver, IntentFilter().apply {
+        androidx.core.content.ContextCompat.registerReceiver(this, receiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
-        })
+            addAction(ACTION_CHECK)
+        }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onDestroy() {
+        cancelCheck()
         runCatching { unregisterReceiver(receiver) }
         AodState.finish.value++
         BackgroundNotice.stop(this)
@@ -89,11 +98,59 @@ class AodService : Service() {
         val why = blockedReason(this, s)
         if (why != null) return
         if (!OverlayHost.canDrawOverlays(this)) return // Android 12 forbids background launches without it.
+        // Never cover an unlocked phone. After a screen TIMEOUT Android waits a few seconds before
+        // locking, and turning the screen back on inside that window cancels the lock — an AOD shown
+        // straight away would sit on an unlocked phone and a double-tap would open it. So: show now
+        // only if the lock is already up (power button); otherwise come back just after the lock
+        // should have engaged. That comeback is an exact alarm, not a coroutine: OxygenOS freezes
+        // background apps about a second after the screen goes off, and only a broadcast wakes them.
+        val km = getSystemService(android.app.KeyguardManager::class.java)
+        if (!km.isDeviceSecure || km.isKeyguardLocked) { launchAod(); return }
+        val lockAfter = android.provider.Settings.Secure.getLong(contentResolver, "lock_screen_lock_after_timeout", 5_000L).coerceIn(0L, 60_000L)
+        val now = android.os.SystemClock.elapsedRealtime()
+        lockDeadline = now + lockAfter + 2_500L
+        // First look soon (the power-button lock can land a moment after SCREEN_OFF), then again after the delay.
+        scheduleCheck(now + 900L)
+    }
+
+    /** The alarm: show the AOD if the screen is still off and the phone is now locked. */
+    private fun onCheck() {
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm.isInteractive || AodState.suppressed || AodState.showing) return
+        val km = getSystemService(android.app.KeyguardManager::class.java)
+        if (km.isDeviceSecure && !km.isKeyguardLocked) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now < lockDeadline) scheduleCheck(minOf(lockDeadline, now + 1_500L))
+            return // still unlocked at the deadline (e.g. a long lock delay): skip rather than expose the phone
+        }
+        val s = runBlocking { graph.prefs.current() }
+        if (blockedReason(this, s) != null) return
+        launchAod()
+    }
+
+    private fun launchAod() {
         AodState.launching = true
         runCatching {
             startActivity(Intent(this, AodActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS))
         }
         graph.scope.launch { kotlinx.coroutines.delay(1500); AodState.launching = false }
+    }
+
+    private fun checkIntent(): android.app.PendingIntent = android.app.PendingIntent.getBroadcast(
+        this, 4201, Intent(ACTION_CHECK).setPackage(packageName),
+        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    private fun scheduleCheck(atElapsed: Long) {
+        val am = getSystemService(android.app.AlarmManager::class.java)
+        val pi = checkIntent()
+        runCatching { am.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP, atElapsed, pi) }
+            .onFailure { runCatching { am.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP, atElapsed, pi) } }
+    }
+
+    private fun cancelCheck() {
+        lockDeadline = 0L
+        runCatching { getSystemService(android.app.AlarmManager::class.java).cancel(checkIntent()) }
     }
 
     @Suppress("DEPRECATION")
@@ -105,6 +162,8 @@ class AodService : Service() {
     }
 
     companion object {
+        private const val ACTION_CHECK = "com.meetdheeran.prism.aod.CHECK"
+
         /** Null if the AOD may show now, else a short reason. Shared with the activity's once-a-minute check. */
         fun blockedReason(ctx: Context, s: Settings): String? {
             if (!s.aodEnabled) return "off"

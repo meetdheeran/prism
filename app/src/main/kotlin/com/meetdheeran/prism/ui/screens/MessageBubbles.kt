@@ -43,6 +43,9 @@ data class AttachmentMeta(val mime: String, val name: String, val path: String?)
 
 private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+/** Marks the start of screen text appended to a question (see SessionModel.send). */
+const val SCREEN_MARKER = "\n\n[Text currently visible on screen]"
+
 fun parseAttachments(raw: String?): List<AttachmentMeta> = runCatching {
     json.parseToJsonElement(raw ?: return emptyList()).jsonArray.map { e ->
         val o = e.jsonObject
@@ -81,7 +84,9 @@ fun UserBubble(backdrop: BackdropState, message: MessageEntity) {
                     }
                     if (message.text.isNotBlank()) Spacer(Modifier.height(8.dp))
                 }
-                if (message.text.isNotBlank()) Text(message.text, style = PrismTypography.bodyLarge.copy(lineHeight = 23.sp), color = PrismColors.TextPrimary)
+                // The screen text sent along with a question is for the model; the bubble shows what you asked.
+                val shown = message.text.substringBefore(SCREEN_MARKER).trim()
+                if (shown.isNotBlank()) Text(shown, style = PrismTypography.bodyLarge.copy(lineHeight = 23.sp), color = PrismColors.TextPrimary)
             }
         }
     }

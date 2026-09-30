@@ -60,6 +60,12 @@ import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
 import kotlinx.coroutines.launch
 import com.meetdheeran.prism.aod.AodService
+import com.meetdheeran.prism.agent.Agent
+import com.meetdheeran.prism.agent.AgentAccessibilityService
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.height
 import com.meetdheeran.prism.ui.theme.Appearance
 import com.meetdheeran.prism.ui.theme.Look
 import com.meetdheeran.prism.ui.theme.NOTHING_ACCENTS
@@ -101,6 +107,16 @@ fun SettingsScreen(nav: NavController) {
     fun update(block: (Settings) -> Settings) = scope.launch { graph.prefs.update(block) }
 
     var advanced by remember { mutableStateOf(false) }
+    val agentConnected by AgentAccessibilityService.connected.collectAsState()
+    val agentState by Agent.state.collectAsState()
+    var agentTick by remember { mutableStateOf(0) }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) agentTick++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    val agentOn = remember(agentConnected, agentTick) { AgentAccessibilityService.isEnabled(ctx) }
     ScreenScaffold("Settings", onBack = { nav.up() }) { backdrop ->
         GlassGroup(backdrop, "Look", footer = settings.look.note + ". Changes every screen, the assistant, the island and the always-on display.") {
             Box(Modifier.padding(16.dp)) {
@@ -175,6 +191,37 @@ fun SettingsScreen(nav: NavController) {
             }
             GlassDivider()
             SettingRow("Advanced", subtitle = if (advanced) "Other AI providers shown above" else "Use Groq or Claude with your own paid key", value = if (advanced) "On" else "Off") { advanced = !advanced }
+        }
+
+        GlassGroup(
+            backdrop, "Phone agent",
+            footer = "Ask things like \"message Anushka on Zoom and say hi\" or \"email this to Sam\". The agent works the apps step by step and asks on the island before anything is sent. Tap the island to stop it.",
+        ) {
+            val ready = settings.agentConsent && agentOn
+            SwitchRow(
+                "Let Prism operate apps",
+                when {
+                    ready -> "On"
+                    settings.agentConsent -> "One more step: switch on \"Prism phone agent\" in Accessibility"
+                    else -> "Off"
+                },
+                ready,
+            ) { on ->
+                if (on) { if (!settings.agentConsent) dialog = "agent" else AgentAccessibilityService.openSettings(ctx) }
+                else {
+                    update { it.copy(agentConsent = false) }
+                    // Apps can't switch an accessibility service off themselves; send the user to the switch.
+                    if (agentOn) AgentAccessibilityService.openSettings(ctx)
+                }
+            }
+            GlassDivider()
+            SettingRow("Accessibility switch", subtitle = "Android's own on/off for the agent", value = if (agentOn) "On" else "Off", chevron = true) { AgentAccessibilityService.openSettings(ctx) }
+            GlassDivider()
+            SettingRow("Never touched", subtitle = "Banking, payment, wallet and password-manager apps, password fields and secure screens")
+            if (agentState.log.isNotEmpty() || agentState.result != null) {
+                GlassDivider()
+                SettingRow("Last task", subtitle = agentState.goal.take(80), value = if (agentState.running) "Running" else if (agentState.success) "Done" else "Stopped", chevron = true) { dialog = "agentlog" }
+            }
         }
 
         GlassGroup(backdrop, "Voice") {
@@ -334,6 +381,20 @@ fun SettingsScreen(nav: NavController) {
     }
 
     when (dialog) {
+        "agent" -> AgentConsentDialog(
+            onAccept = {
+                update { it.copy(agentConsent = true) }
+                dialog = null
+                if (!agentOn) AgentAccessibilityService.openSettings(ctx)
+            },
+            onDismiss = { dialog = null },
+        )
+        "agentlog" -> ChoiceDialog(
+            "Last task",
+            (listOf(agentState.goal to "Goal") + agentState.log.mapIndexed { i, step -> "${i + 1}. $step" to null } +
+                listOfNotNull(agentState.result?.let { it to (if (agentState.success) "Result" else "Ended") })),
+            -1, onPick = { },
+        ) { dialog = null }
         "island" -> ChoiceDialog("Island look", IslandStyle.entries.map { it.label to it.note }, IslandStyle.entries.indexOf(settings.islandStyle), onPick = { i -> update { it.copy(islandStyle = IslandStyle.entries[i]) }; dialog = null }) { dialog = null }
         "style" -> ChoiceDialog("Assistant look", AssistantStyle.entries.map { it.label to it.note }, AssistantStyle.entries.indexOf(settings.assistantStyle), onPick = { i -> update { it.copy(assistantStyle = AssistantStyle.entries[i]) }; dialog = null }) { dialog = null }
         "model" -> {
@@ -405,4 +466,40 @@ private fun SliderRow(title: String, value: String, current: Float, range: Close
             colors = SliderDefaults.colors(thumbColor = if (Appearance.nothing) PrismColors.TextPrimary else Color.White, activeTrackColor = accent, inactiveTrackColor = PrismColors.TextTertiary.copy(alpha = 0.4f)),
         )
     }
+}
+
+
+/**
+ * Shown once before the agent can be switched on. Says plainly what it can do, what it will never do,
+ * and where the screen content goes — including what free Gemini keys mean for privacy.
+ */
+@Composable
+private fun AgentConsentDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = PrismColors.Slate,
+        titleContentColor = PrismColors.TextPrimary,
+        textContentColor = PrismColors.TextSecondary,
+        title = { Text("Let Prism operate your apps?", style = PrismTypography.titleLarge) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("When you ask, the agent reads the screen of the app in front and taps or types for you, one step at a time.", style = PrismTypography.bodyMedium, color = PrismColors.TextPrimary)
+                Spacer(Modifier.height(10.dp))
+                Text("• Before anything is sent, posted, deleted or paid, it asks you on the island.", style = PrismTypography.bodyMedium)
+                Text("• It never opens banking, payment or password apps, and never reads password fields.", style = PrismTypography.bodyMedium)
+                Text("• Text on the screen is never treated as an instruction — only what you asked.", style = PrismTypography.bodyMedium)
+                Spacer(Modifier.height(10.dp))
+                Text("Privacy", style = PrismTypography.titleSmall, color = PrismColors.TextPrimary)
+                Text(
+                    "To decide each step, what's on the screen (messages and emails included) is sent to the AI provider you use in Prism — Gemini by default. " +
+                        "With a free Gemini key, Google's terms let it use that content to improve its products, and people may review it. Paid keys aren't used that way.",
+                    style = PrismTypography.bodyMedium,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text("Next, Android opens Accessibility: switch on \"Prism phone agent\".", style = PrismTypography.bodySmall, color = PrismColors.TextTertiary)
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onAccept) { Text("Turn on", color = LocalAccent.current) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Not now", color = PrismColors.TextSecondary) } },
+    )
 }

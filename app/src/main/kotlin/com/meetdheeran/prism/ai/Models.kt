@@ -51,6 +51,8 @@ data class ChatRequest(
     val webSearch: Boolean = false,
     val temperature: Float = 0.7f,
     val maxOutputTokens: Int = 2048,
+    /** At most one tool call per reply (providers that support it); the phone agent acts one step at a time. */
+    val singleToolCall: Boolean = false,
 )
 
 sealed interface AiEvent {

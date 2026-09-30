@@ -56,6 +56,16 @@ object Providers {
     fun modelInfo(provider: AiProvider, model: String): ModelInfo? =
         provider.knownModels().firstOrNull { it.id == model }
 
+    /**
+     * If the selected provider has no key but another one does, the provider to switch the setting
+     * to (Gemini first, then Claude, then Groq); null when nothing needs to change. The switch is a
+     * visible Settings change, not a silent per-request fallback — rule 4 still holds.
+     */
+    fun providerWithKey(ctx: Context, selected: Provider): Provider? {
+        if (apiKey(ctx, selected) != null) return null
+        return listOf(Provider.GEMINI, Provider.CLAUDE, Provider.GROQ).firstOrNull { apiKey(ctx, it) != null }
+    }
+
     /** User-facing line shown when the selected provider has no key yet. */
     fun missingKeyMessage(p: Provider): String =
         "No ${p.label} API key yet. Add one in Settings > API keys."

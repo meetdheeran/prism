@@ -2,6 +2,9 @@ package com.meetdheeran.prism.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -68,7 +71,7 @@ fun ScreenScaffold(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp + LocalIslandInset.current))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onBack != null) {
                     GlassIconButton(backdrop, Icons.Rounded.ArrowBackIosNew, "Back", onClick = onBack)
@@ -82,6 +85,17 @@ fun ScreenScaffold(
             content(backdrop)
             Spacer(Modifier.height(32.dp))
         }
+        // Content scrolls under the status bar; give the clock and icons a backdrop so they never
+        // sit on top of text (solid in the Nothing look, a soft fade over the glass).
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .background(
+                    if (Appearance.nothing) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Appearance.palette.bg, Appearance.palette.bg))
+                    else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(PrismColors.Ink.copy(alpha = 0.92f), PrismColors.Ink.copy(alpha = 0.6f))),
+                ),
+        )
     }
 }
 
@@ -182,7 +196,12 @@ fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifie
                 contentAlignment = Alignment.Center,
             ) {
                 val onColor = if (Appearance.nothing) Appearance.palette.bg else PrismColors.TextPrimary
-                Text(if (Appearance.nothing) label.uppercase() else label, style = PrismTypography.labelLarge, color = if (on) onColor else PrismColors.TextSecondary, maxLines = 1)
+                // Mono capitals run wide; the Nothing look uses the smaller label so four options fit.
+                Text(
+                    if (Appearance.nothing) label.uppercase() else label,
+                    style = if (Appearance.nothing) PrismTypography.labelMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) else PrismTypography.labelLarge,
+                    color = if (on) onColor else PrismColors.TextSecondary, maxLines = 1, softWrap = false,
+                )
             }
         }
     }
