@@ -85,6 +85,7 @@ import com.meetdheeran.prism.ui.motion.pressable
 import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
 import kotlinx.coroutines.delay
+import kotlin.math.PI
 import kotlin.math.sin
 import com.meetdheeran.prism.agent.Agent
 import androidx.compose.foundation.border
@@ -117,6 +118,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     val backdrop = rememberBackdropState()
     val mode = when {
         state.agent.confirm != null -> Mode.AGENT_CONFIRM
+        state.showFace -> Mode.FACE
         state.showUnlock -> Mode.UNLOCK
         state.expanded && state.media != null -> Mode.EXPANDED
         state.agent.running && state.agentPanel -> Mode.AGENT_PANEL
@@ -133,21 +135,21 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     }
     val base = state.pillWidthDp.dp
     val baseH = state.pillHeightDp.dp
-    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
+    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
     val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
     val targetH = when (mode) {
         Mode.EXPANDED -> 156.dp
         Mode.AGENT_CONFIRM -> 158.dp
         Mode.AGENT_PANEL -> 176.dp
         Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines
-        Mode.UNLOCK -> baseH + 34.dp
+        Mode.UNLOCK, Mode.FACE -> baseH + 34.dp
         else -> baseH
     }
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
     val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT
-    val shape = RoundedCornerShape(when { big -> 34.dp; mode == Mode.UNLOCK -> 26.dp; else -> baseH / 2 })
+    val shape = RoundedCornerShape(when { big -> 34.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 })
 
     // The Nothing look has no glass: its island is always a plain black pill.
     val lensMode = state.style == IslandStyle.LENS && !Appearance.nothing
@@ -158,7 +160,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     // like the iPhone 18 Pro island. The two black shapes are drawn through a blur + alpha threshold
     // (a "metaball"), so while they're close a liquid neck stretches between them and then snaps.
     val secondary = if (!state.split) null else when {
-        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK -> null
+        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK || mode == Mode.FACE -> null
         state.media != null -> Second.MEDIA
         state.activity != null && mode != Mode.ACTIVITY && state.activity.kind != LiveActivity.Kind.CALL -> Second.TIMER
         else -> null
@@ -291,7 +293,7 @@ private fun PillBody(
                                 // Tap while it works opens the step panel (with Stop); it no longer stops outright.
                                 mode == Mode.AGENT -> onAgentTap()
                                 mode == Mode.AGENT_RESULT -> onAgentResultTap()
-                                mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.UNLOCK -> Unit
+                                mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.UNLOCK || mode == Mode.FACE -> Unit
                                 mode == Mode.CALL || mode == Mode.ACTIVITY -> state.activity?.let(onActivityTap)
                                 mode == Mode.PEEK -> state.peek?.let(onPeekTap)
                                 mode == Mode.EMPTY || mode == Mode.AI -> onAssistant()
@@ -318,6 +320,7 @@ private fun PillBody(
                     Mode.AGENT_RESULT -> AgentResultCard(state.agent)
                     Mode.AGENT_PANEL -> AgentPanelCard(state.agent, onStop = onAgentStop, onHide = onAgentTap)
                     Mode.UNLOCK -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { UnlockGlyph() }
+                    Mode.FACE -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FaceScanGlyph(state.face) }
                     Mode.PEEK -> state.peek?.let { PeekRow(it) }
                 }
             }
@@ -325,7 +328,7 @@ private fun PillBody(
     }
 }
 
-private enum class Mode { EMPTY, MEDIA, CHARGING, EVENT, CALL, ACTIVITY, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK }
+private enum class Mode { EMPTY, MEDIA, CHARGING, EVENT, CALL, ACTIVITY, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK, FACE }
 
 /** The agent's finished answer, big enough to read: stays 15 s, tap outside to close, tap it to open the chat. */
 @Composable
@@ -429,6 +432,61 @@ private fun UnlockGlyph() {
             }
             drawPath(shackle, ink.copy(alpha = lockAlpha), style = androidx.compose.ui.graphics.drawscope.Stroke(width = sw, cap = androidx.compose.ui.graphics.StrokeCap.Round))
             drawCircle(if (nothing) NothingPalette.Red else Color.Black, s * 0.045f, androidx.compose.ui.geometry.Offset(s * 0.5f, bodyTop + s * 0.16f), alpha = lockAlpha)
+        }
+    }
+}
+
+/**
+ * Another app's face check (Morse's face unlock), with no words: the dotted face brackets breathe and a line sweeps
+ * while the camera looks; a smile draws itself when it's you; a small red shake when it isn't.
+ */
+@Composable
+private fun FaceScanGlyph(face: FaceScan) {
+    val nothing = Appearance.nothing
+    val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "faceScan").animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(tween(850, easing = LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "pulse",
+    )
+    val t = remember(face) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(face) { if (face != FaceScan.SCANNING) t.animateTo(1f, tween(650, easing = LinearEasing)) }
+    Canvas(Modifier.size(38.dp)) {
+        val p = t.value
+        val s = size.minDimension
+        val sw = s * 0.06f
+        val dots = if (nothing) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(0.01f, sw * 1.7f)) else null
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = sw, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round, pathEffect = dots)
+        val fail = face == FaceScan.FAIL
+        val ink = if (fail) (if (nothing) NothingPalette.Red else Color(0xFFFF453A)) else Color.White
+        val shake = if (fail) (sin(p * 6f * PI.toFloat()) * s * 0.09f * (1f - p)) else 0f
+        val breathe = if (face == FaceScan.SCANNING) 0.035f * pulse else 0f
+        val m = s * (0.06f + breathe)
+        val len = s * 0.24f
+        val r = s * 0.1f
+        fun corner(x: Float, y: Float, dx: Float, dy: Float) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(x + shake, y + dy * len); lineTo(x + shake, y + dy * r)
+                quadraticBezierTo(x + shake, y, x + shake + dx * r, y); lineTo(x + shake + dx * len, y)
+            }
+            drawPath(path, ink, style = stroke)
+        }
+        corner(m, m, 1f, 1f); corner(s - m, m, -1f, 1f); corner(m, s - m, 1f, -1f); corner(s - m, s - m, -1f, -1f)
+        val eyeTop = androidx.compose.ui.geometry.Offset(s * 0.36f + shake, s * 0.36f)
+        drawLine(ink, eyeTop, eyeTop.copy(y = s * 0.44f), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(ink, eyeTop.copy(x = s * 0.64f + shake), androidx.compose.ui.geometry.Offset(s * 0.64f + shake, s * 0.44f), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+        when (face) {
+            FaceScan.SCANNING -> {
+                // A line sweeping down and up the face while the camera looks.
+                val y = s * (0.28f + 0.44f * pulse)
+                drawLine(ink.copy(alpha = 0.7f), androidx.compose.ui.geometry.Offset(s * 0.24f, y), androidx.compose.ui.geometry.Offset(s * 0.76f, y), sw * 0.8f, androidx.compose.ui.graphics.StrokeCap.Round)
+            }
+            FaceScan.OK -> {
+                val smile = p.coerceIn(0f, 1f)
+                if (smile > 0f) drawArc(ink, 150f - 120f * smile + 120f, 120f * smile, false,
+                    topLeft = androidx.compose.ui.geometry.Offset(s * 0.32f, s * 0.44f), size = androidx.compose.ui.geometry.Size(s * 0.36f, s * 0.24f), style = stroke)
+            }
+            FaceScan.FAIL -> drawLine(ink, androidx.compose.ui.geometry.Offset(s * 0.38f + shake, s * 0.62f), androidx.compose.ui.geometry.Offset(s * 0.62f + shake, s * 0.62f), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+            FaceScan.OFF -> Unit
         }
     }
 }

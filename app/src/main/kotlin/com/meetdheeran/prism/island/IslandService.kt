@@ -49,6 +49,14 @@ import kotlinx.coroutines.launch
 
 data class BatteryInfo(val percent: Int = -1, val charging: Boolean = false)
 
+/**
+ * A face check running in another app (Morse's face unlock), shown on the island without words: scanning, then
+ * it's you (ok) or it isn't (fail). Sent as a broadcast: [ACTION_FACE] with extra "state" = scan / ok / fail / off.
+ */
+enum class FaceScan { OFF, SCANNING, OK, FAIL }
+
+const val ACTION_FACE = "com.meetdheeran.prism.ISLAND_FACE"
+
 /** A 3-second pop: low battery, Wi-Fi or Bluetooth connected. */
 data class IslandEvent(val kind: Kind, val text: String, val at: Long) {
     enum class Kind { BATTERY_LOW, WIFI, BLUETOOTH }
@@ -86,6 +94,9 @@ data class IslandState(
     val agentPanel: Boolean = false,
     /** elapsedRealtime of the last unlock; the island plays the Face-ID-style unlock for a moment. */
     val unlockAt: Long = 0L,
+    /** Another app's face check (Morse), and when its state last changed. */
+    val face: FaceScan = FaceScan.OFF,
+    val faceAt: Long = 0L,
     /** Bumped when a timed pop (bloom, event, peek) expires, so the UI re-reads the clock. */
     val tick: Long = 0L,
 ) {
@@ -96,9 +107,12 @@ data class IslandState(
     /** The agent's answer stays up for 15 s (long enough to read) unless tapped away. */
     val showAgentResult: Boolean get() = !agent.running && agent.result != null && !agent.resultDismissed && SystemClock.elapsedRealtime() - agent.finishedAt < 15_000
     val showUnlock: Boolean get() = unlockAt > 0 && SystemClock.elapsedRealtime() - unlockAt < 1_700
+    /** Scanning shows until the app says otherwise (12 s at most, in case it never does); ok / fail for a moment. */
+    val showFace: Boolean get() = face != FaceScan.OFF &&
+        SystemClock.elapsedRealtime() - faceAt < (if (face == FaceScan.SCANNING) 12_000 else 1_400)
     /** Cards that close when you tap anywhere else on the screen. */
     val wantsOutsideTaps: Boolean get() = expanded || showAgentResult || (agentPanel && agent.running)
-    val hasContent: Boolean get() = showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
+    val hasContent: Boolean get() = showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
 }
 
 /** Battery broadcasts as flows. */
@@ -142,6 +156,7 @@ class IslandService : Service() {
     private val peeks = MutableStateFlow<Pair<ShadeItem?, Long>>(null to 0L)
     private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var unlockReceiver: BroadcastReceiver? = null
+    private var faceReceiver: BroadcastReceiver? = null
     private var panelJob: Job? = null
     /** Whether the window currently asks for taps outside it (only while a closable card is up). */
     private var watchingOutside = false
@@ -197,6 +212,29 @@ class IslandService : Service() {
             }
         }
         registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+        // Morse's face unlock: its camera check shows here, small, instead of on its own screen. It's only a
+        // picture (the unlocking itself happens in Morse), so any app may send it.
+        faceReceiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                val face = when (i.getStringExtra("state")) {
+                    "scan" -> FaceScan.SCANNING
+                    "ok" -> FaceScan.OK
+                    "fail" -> FaceScan.FAIL
+                    else -> FaceScan.OFF
+                }
+                val at = SystemClock.elapsedRealtime()
+                state.value = state.value.copy(face = face, faceAt = at)
+                sync()
+                scope.launch {
+                    delay(if (face == FaceScan.SCANNING) 12_100 else 1_500)
+                    if (state.value.faceAt == at) {
+                        state.value = state.value.copy(face = FaceScan.OFF, tick = SystemClock.elapsedRealtime())
+                        sync()
+                    }
+                }
+            }
+        }
+        ContextCompat.registerReceiver(this, faceReceiver!!, IntentFilter(ACTION_FACE), ContextCompat.RECEIVER_EXPORTED)
         ContextCompat.registerReceiver(this, btReceiver!!, IntentFilter(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED), ContextCompat.RECEIVER_EXPORTED)
         scope.launch {
             combine(graph.prefs.settings, MediaWatcher.now, PrismNotificationListener.activities, ch.info, ch.connectedAt) { s: Settings, np, acts, bat, at ->
@@ -230,6 +268,8 @@ class IslandService : Service() {
                     expanded = state.value.expanded && next.media != null,
                     agentPanel = state.value.agentPanel && next.agent.running,
                     unlockAt = state.value.unlockAt,
+                    face = state.value.face,
+                    faceAt = state.value.faceAt,
                 )
                 if (offsetChanged && showing) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
                 sync()
@@ -380,6 +420,7 @@ class IslandService : Service() {
         wifiCallback?.let { runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         btReceiver?.let { runCatching { unregisterReceiver(it) } }
         unlockReceiver?.let { runCatching { unregisterReceiver(it) } }
+        faceReceiver?.let { runCatching { unregisterReceiver(it) } }
         scope.cancel()
         BackgroundNotice.stop(this)
         super.onDestroy()

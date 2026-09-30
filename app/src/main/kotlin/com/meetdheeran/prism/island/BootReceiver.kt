@@ -9,10 +9,10 @@ import com.meetdheeran.prism.core.AppGraph
 import kotlinx.coroutines.runBlocking
 import com.meetdheeran.prism.reminders.rescheduleRemindersBlocking
 
-/** Re-arms the overlay services after a reboot, only if the user left them on. */
+/** Re-arms the overlay services after a reboot or an update, only if the user left them on. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         val s = runBlocking { AppGraph.get(context).prefs.current() }
         runCatching { rescheduleRemindersBlocking(context) }
         if (s.islandEnabled) ContextCompat.startForegroundService(context, Intent(context, IslandService::class.java).setAction("start"))
