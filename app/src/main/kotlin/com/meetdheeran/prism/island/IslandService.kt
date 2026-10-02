@@ -31,6 +31,13 @@ import com.meetdheeran.prism.core.Settings
 import com.meetdheeran.prism.overlay.BackgroundNotice
 import com.meetdheeran.prism.overlay.OverlayHost
 import com.meetdheeran.prism.assistant.AssistantLauncher
+import com.meetdheeran.prism.ai.Prompts
+import com.meetdheeran.prism.ai.Providers
+import com.meetdheeran.prism.core.VoiceInputMode
+import com.meetdheeran.prism.assistant.Haptics
+import com.meetdheeran.prism.assistant.SpeechOutput
+import com.meetdheeran.prism.assistant.SpeechState
+import com.meetdheeran.prism.assistant.SpeechInput
 import com.meetdheeran.prism.ui.motion.LocalTilt
 import com.meetdheeran.prism.ui.motion.rememberDeviceTilt
 import com.meetdheeran.prism.ui.theme.PrismTheme
@@ -65,6 +72,17 @@ const val ACTION_ISLAND_BOUNDS_ASK = "com.meetdheeran.prism.ISLAND_BOUNDS_ASK"
 private const val MORSE = "com.meetdheeran.morse"
 private const val MORSE_KNOCK_TAP = "com.meetdheeran.morse.KNOCK_TAP"
 
+/** A question asked by holding the island, answered right there: listening, thinking, then the answer. */
+data class Ask(
+    val question: String = "",
+    val answer: String = "",
+    val phase: Phase = Phase.Listening,
+    val level: Float = 0f,
+    val error: Boolean = false,
+    /** elapsedRealtime when the answer finished (0 while it's still coming). */
+    val doneAt: Long = 0L,
+)
+
 /** A 3-second pop: low battery, Wi-Fi or Bluetooth connected. */
 data class IslandEvent(val kind: Kind, val text: String, val at: Long) {
     enum class Kind { BATTERY_LOW, WIFI, BLUETOOTH }
@@ -81,6 +99,8 @@ data class IslandState(
     val focusKey: String? = null,
     /** Plugged in and not yet full: charging is one of the live things, as a dot bar. */
     val chargingLive: Boolean = false,
+    /** A question asked by holding the island (see [Ask]). */
+    val ask: Ask? = null,
     val battery: BatteryInfo = BatteryInfo(),
     /** elapsedRealtime when the cable went in; the bloom shows for 3 s after. */
     val chargedAt: Long = 0L,
@@ -136,8 +156,8 @@ data class IslandState(
     val showFace: Boolean get() = face != FaceScan.OFF &&
         SystemClock.elapsedRealtime() - faceAt < (if (face == FaceScan.SCANNING) 12_000 else 1_400)
     /** Cards that close when you tap anywhere else on the screen. */
-    val wantsOutsideTaps: Boolean get() = expanded || showAgentResult || (agentPanel && agent.running)
-    val hasContent: Boolean get() = (notch && !landscape) || activities.isNotEmpty() || chargingLive || showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
+    val wantsOutsideTaps: Boolean get() = expanded || showAgentResult || (agentPanel && agent.running) || ask != null
+    val hasContent: Boolean get() = (notch && !landscape) || ask != null || activities.isNotEmpty() || chargingLive || showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
 }
 
 /** Battery broadcasts as flows. */
@@ -311,6 +331,7 @@ class IslandService : Service() {
                     notch = inNotch,
                     landscape = state.value.landscape,
                     focusKey = state.value.focusKey,
+                    ask = state.value.ask,
                 )
                 if (offsetChanged && showing) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
                 sync()
@@ -475,8 +496,10 @@ class IslandService : Service() {
                         onTap = { tapped() },
                         onFocus = { key -> state.value = state.value.copy(focusKey = key) },
                         onOpen = { key -> openLive(key) },
+                        onAskClose = { endAsk() },
+                        onAskMore = { askMore() },
                         onToggleExpand = { setExpanded(!st.expanded) },
-                        onAssistant = { openAssistant() },
+                        onAssistant = { holdIsland() },
                         onActivityTap = { a -> runCatching { a.contentIntent?.send() } },
                         onPeekTap = { n -> runCatching { n.contentIntent?.send() } },
                         onAgentStop = { setAgentPanel(false); Agent.stop() },
@@ -495,6 +518,7 @@ class IslandService : Service() {
             if (ev.action == MotionEvent.ACTION_OUTSIDE) {
                 val s = state.value
                 when {
+                    s.ask != null -> endAsk()
                     s.showAgentResult -> Agent.dismissResult()
                     s.agentPanel -> setAgentPanel(false)
                     s.expanded -> setExpanded(false)
@@ -549,7 +573,107 @@ class IslandService : Service() {
         AssistantLauncher.open(this)
     }
 
+    // ------------------------------------------------------------ ask in the island
+
+    private var speech: SpeechInput? = null
+    private var askJob: Job? = null
+    private var askWatch: Job? = null
+
+    /** Hold the island: ask right there (listen, think, answer in the island) — or, if that's off, the assistant. */
+    private fun holdIsland() {
+        scope.launch {
+            val st = AppGraph.get(this@IslandService).prefs.current()
+            val mic = (speech ?: SpeechInput(this@IslandService).also { speech = it })
+            if (!st.islandAskInPlace || !mic.hasMicPermission()) openAssistant() else ask(st, mic)
+        }
+    }
+
+    private fun ask(st: Settings, mic: SpeechInput) {
+        askJob?.cancel()
+        AppGraph.get(this).speechOutput.stop()
+        setExpanded(false)
+        setAsk(Ask())
+        Haptics.tick(this)
+        askWatch?.cancel()
+        askWatch = scope.launch {
+            mic.state.collect { sp ->
+                val a = state.value.ask ?: return@collect
+                when (sp) {
+                    is SpeechState.Listening -> if (a.phase == Phase.Listening) setAsk(a.copy(level = sp.level, question = sp.partial))
+                    is SpeechState.Processing -> if (a.phase == Phase.Listening) setAsk(a.copy(phase = Phase.Thinking))
+                    is SpeechState.Error -> finishAsk(a.copy(answer = sp.message, error = true, phase = Phase.Idle))
+                    else -> Unit
+                }
+            }
+        }
+        val transcriber: (suspend (ByteArray) -> Result<String>?)? = if (st.voiceInput == VoiceInputMode.SYSTEM) null else { wav ->
+            val p = if (st.voiceInput == VoiceInputMode.GROQ_WHISPER) Providers.groq() else Providers.gemini()
+            val key = Providers.apiKey(this, p.provider)
+            if (key == null) Result.failure(IllegalStateException(Providers.missingKeyMessage(p.provider))) else p.transcribe(key, wav)
+        }
+        mic.start(st.voiceInput, onFinal = { text -> if (text.isBlank()) endAsk() else answer(text, st) }, transcribe = transcriber)
+    }
+
+    /** The short answer, streamed into the island as it comes, then read out if spoken replies are on. */
+    private fun answer(question: String, st: Settings) {
+        askWatch?.cancel()
+        setAsk(Ask(question = question, phase = Phase.Thinking))
+        askJob = scope.launch {
+            val graph = AppGraph.get(this@IslandService)
+            val text = StringBuilder()
+            val failed = runCatching {
+                graph.engine.quick(question, system = Prompts.island(st)).collect { d ->
+                    text.append(d)
+                    setAsk(Ask(question = question, answer = text.toString(), phase = Phase.Speaking))
+                }
+            }.exceptionOrNull()
+            val reply = if (failed != null) failed.message ?: "Couldn't answer that" else text.toString().trim()
+            finishAsk(Ask(question = question, answer = reply, phase = Phase.Idle, error = failed != null))
+            if (failed == null && st.speakReplies && reply.isNotBlank()) graph.speechOutput.speak(SpeechOutput.stripMarkdown(reply))
+        }
+    }
+
+    /** The answer stays up 15 s (long enough to read), unless tapped away or swiped down. */
+    private fun finishAsk(a: Ask) {
+        val done = a.copy(doneAt = SystemClock.elapsedRealtime())
+        setAsk(done)
+        scope.launch {
+            delay(15_000)
+            if (state.value.ask?.doneAt == done.doneAt) endAsk()
+        }
+    }
+
+    private fun endAsk() {
+        askJob?.cancel()
+        askWatch?.cancel()
+        speech?.cancel()
+        AppGraph.get(this).speechOutput.stop()
+        setAsk(null)
+    }
+
+    /** Swipe the answer down: carry on in Prism's chat, with the same question. */
+    private fun askMore() {
+        val q = state.value.ask?.question.orEmpty()
+        endAsk()
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_ASSISTANT)
+                    .apply { if (q.isNotBlank()) putExtra(MainActivity.EXTRA_PROMPT, q) }
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
+    private fun setAsk(a: Ask?) {
+        state.value = state.value.copy(ask = a)
+        sync()
+        refreshOutsideWatch()
+    }
+
     override fun onDestroy() {
+        askJob?.cancel()
+        askWatch?.cancel()
+        speech?.release()
         hide()
         host?.destroy()
         charging?.stop()

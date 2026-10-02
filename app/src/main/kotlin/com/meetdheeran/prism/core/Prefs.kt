@@ -117,6 +117,8 @@ data class Settings(
     /** Glass or Nothing. Changes every surface, and how the assistant talks. */
     val look: Look = Look.GLASS,
     val islandShowAssistant: Boolean = true,
+    /** Hold the island and ask: the answer shows (and is spoken) right there; off, holding opens the assistant. */
+    val islandAskInPlace: Boolean = true,
     val islandShowNotifications: Boolean = true,
     /** Always-on display shown whenever the screen turns off. */
     val aodEnabled: Boolean = false,
@@ -180,6 +182,7 @@ class Prefs(private val ctx: Context) {
         val tilesOrder = stringPreferencesKey("tiles_order")
         val look = stringPreferencesKey("look")
         val islandShowAssistant = booleanPreferencesKey("island_assistant")
+        val islandAskInPlace = booleanPreferencesKey("island_ask_in_place")
         val islandShowNotifications = booleanPreferencesKey("island_notifications")
         val aodEnabled = booleanPreferencesKey("aod_enabled")
         val aodPocketOff = booleanPreferencesKey("aod_pocket_off")
@@ -238,6 +241,7 @@ class Prefs(private val ctx: Context) {
         tilesOrder = this[K.tilesOrder] ?: "",
         look = Look.from(this[K.look]),
         islandShowAssistant = this[K.islandShowAssistant] ?: true,
+        islandAskInPlace = this[K.islandAskInPlace] ?: true,
         islandShowNotifications = this[K.islandShowNotifications] ?: true,
         aodEnabled = this[K.aodEnabled] ?: false,
         aodPocketOff = this[K.aodPocketOff] ?: true,
@@ -302,6 +306,7 @@ class Prefs(private val ctx: Context) {
             p[K.tilesOrder] = s.tilesOrder
             p[K.look] = s.look.id
             p[K.islandShowAssistant] = s.islandShowAssistant
+            p[K.islandAskInPlace] = s.islandAskInPlace
             p[K.islandShowNotifications] = s.islandShowNotifications
             p[K.aodEnabled] = s.aodEnabled
             p[K.aodPocketOff] = s.aodPocketOff

@@ -94,6 +94,16 @@ object Prompts {
      * Default system prompt for [AssistantEngine.quick]: stateless one-shots such as
      * rewrite / summarize / translate, where the caller wants the result and nothing else.
      */
+    /** A question asked by holding the island: the answer has to fit there. */
+    fun island(settings: Settings): String {
+        val name = settings.assistantName.ifBlank { "Prism" }
+        return buildString {
+            appendLine("You are $name, answering a quick spoken question inside the phone's Dynamic Island.")
+            appendLine("Reply in one or two short sentences, under 220 characters, plain text: no markdown, no lists, no preamble.")
+            append("If it needs more than that, give the key fact first; the person can swipe down to continue in the full chat.")
+        }
+    }
+
     fun oneShot(settings: Settings): String {
         val name = settings.assistantName.ifBlank { "Prism" }
         return buildString {

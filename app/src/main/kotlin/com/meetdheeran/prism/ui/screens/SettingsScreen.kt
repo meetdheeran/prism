@@ -277,6 +277,8 @@ fun SettingsScreen(nav: NavController) {
             }
             SwitchRow("Assistant", "Tap or hold the island to talk; it shows listening and thinking", settings.islandShowAssistant, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowAssistant = on) } }
             GlassDivider()
+            SwitchRow("Ask in the island", "Hold the island and ask: the answer shows right there, read out if spoken replies are on. Swipe it down to carry on in Prism", settings.islandAskInPlace, enabled = settings.islandEnabled) { on -> update { it.copy(islandAskInPlace = on) } }
+            GlassDivider()
             SwitchRow("Split into two", "When two things run at once, one pops off into its own bubble (like iPhone)", settings.islandSplit, enabled = settings.islandEnabled) { on -> update { it.copy(islandSplit = on) } }
             GlassDivider()
             SliderRow("Animation speed", "%.1f×".format(settings.islandSpeed), settings.islandSpeed, 0.5f..2f) { v -> update { it.copy(islandSpeed = v) } }

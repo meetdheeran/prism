@@ -121,7 +121,7 @@ import com.meetdheeran.prism.ui.siri.Phase
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
+fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onAskClose: () -> Unit = {}, onAskMore: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
     val backdrop = rememberBackdropState()
     // Everything live at once (HyperOS-style): one shows in the island, up to two more wait in bubbles beside it;
     // swipe the island sideways to switch, pull it down to open that app.
@@ -138,6 +138,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
         state.agent.confirm != null -> Mode.AGENT_CONFIRM
         state.showFace -> Mode.FACE
         state.showUnlock -> Mode.UNLOCK
+        state.ask != null -> Mode.ASK
         state.expanded && state.media != null -> Mode.EXPANDED
         state.agent.running && state.agentPanel -> Mode.AGENT_PANEL
         state.agent.running -> Mode.AGENT
@@ -157,7 +158,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val tab = state.notch
     val base = if (tab) state.cutWidthDp.dp else state.pillWidthDp.dp
     val baseH = if (tab) (state.cutHeightDp + 1f).dp else state.pillHeightDp.dp
-    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
+    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp }
     val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
     // In the notch the camera sits in the middle of the tab's top. Things that stay up (music, calls, timers,
     // downloads, charging) sit either side of it, iPhone-style, within the status bar so they never cover the app;
@@ -165,7 +166,9 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val cam = if (tab) state.cutHeightDp.dp else 0.dp
     val compact = mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.CALL || mode == Mode.ACTIVITY || mode == Mode.PROGRESS || mode == Mode.CHARGE_LIVE
     val below = tab && !compact
+    val askLines = state.ask?.answer.orEmpty().let { r -> if (r.isEmpty()) 0 else r.lines().sumOf { 1 + it.length / 36 } }.coerceIn(0, 7)
     val targetH = when (mode) {
+        Mode.ASK -> cam + (if (askLines == 0) 46.dp else 64.dp + 20.dp * askLines)
         Mode.EXPANDED -> 156.dp + cam
         Mode.AGENT_CONFIRM -> 158.dp + cam
         Mode.AGENT_PANEL -> 176.dp + cam
@@ -176,7 +179,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
-    val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT
+    val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.ASK
     val corner = when { big -> 34.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }
     // The tab is flush with the screen's top edge: square on top, rounded below.
     val shape = if (tab) RoundedCornerShape(0.dp, 0.dp, corner, corner) else RoundedCornerShape(corner)
@@ -191,7 +194,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     // and then snaps. While a pop shows (a peek, an event, the assistant), the live things all wait as bubbles.
     val bubbles: List<Live> = when {
         !state.split -> emptyList()
-        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK || mode == Mode.FACE -> emptyList()
+        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK || mode == Mode.FACE || mode == Mode.ASK -> emptyList()
         mode == Mode.MEDIA || mode == Mode.CALL || mode == Mode.ACTIVITY || mode == Mode.PROGRESS || mode == Mode.CHARGE_LIVE -> items.filter { it != current }.take(2)
         else -> items.take(2)
     }
@@ -259,7 +262,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                 }
             }
             Box(Modifier.offset(x = side)) {
-                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
             }
             if (splitting) {
                 shown.forEachIndexed { i, live ->
@@ -350,7 +353,7 @@ private fun PillBody(
     contentTop: androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
-    onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
+    onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onAskClose: () -> Unit, onAskMore: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
     onAgentStop: () -> Unit, onAgentAnswer: (Boolean) -> Unit, onAgentTap: () -> Unit, onAgentResultTap: () -> Unit,
 ) {
     Box {
@@ -387,7 +390,11 @@ private fun PillBody(
                         onDragStart = { pulled = 0f },
                         onDragEnd = {
                             if (pulled > 36.dp.toPx()) {
-                                if (mode == Mode.PEEK) state.peek?.let(onPeekTap) else currentKey?.let(onOpen)
+                                when (mode) {
+                                    Mode.ASK -> onAskMore()
+                                    Mode.PEEK -> state.peek?.let(onPeekTap)
+                                    else -> currentKey?.let(onOpen)
+                                }
                             }
                         },
                     ) { change, dy -> change.consume(); pulled += dy }
@@ -412,6 +419,7 @@ private fun PillBody(
                             when {
                                 // Tapping the island while the agent works stops it.
                                 // Tap while it works opens the step panel (with Stop); it no longer stops outright.
+                                mode == Mode.ASK -> onAskClose()
                                 mode == Mode.AGENT -> onAgentTap()
                                 mode == Mode.AGENT_RESULT -> onAgentResultTap()
                                 mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.UNLOCK || mode == Mode.FACE -> Unit
@@ -448,13 +456,14 @@ private fun PillBody(
                     Mode.UNLOCK -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { UnlockGlyph() }
                     Mode.FACE -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FaceScanGlyph(state.face) }
                     Mode.PEEK -> state.peek?.let { PeekRow(it) }
+                    Mode.ASK -> state.ask?.let { AskCard(it) }
                 }
             }
         }
     }
 }
 
-private enum class Mode { EMPTY, MEDIA, CHARGING, CHARGE_LIVE, EVENT, CALL, ACTIVITY, PROGRESS, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK, FACE }
+private enum class Mode { EMPTY, MEDIA, CHARGING, CHARGE_LIVE, EVENT, CALL, ACTIVITY, PROGRESS, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK, FACE, ASK }
 
 /** The agent's finished answer, big enough to read: stays 15 s, tap outside to close, tap it to open the chat. */
 @Composable
@@ -990,3 +999,34 @@ private fun ChargeSplit(b: BatteryInfo, gap: androidx.compose.ui.unit.Dp) = Spli
     },
     right = { Text(if (b.percent >= 0) "${b.percent}%" else "", style = PrismTypography.labelSmall, color = Ink.good, maxLines = 1) },
 )
+
+/**
+ * A question asked by holding the island: what it heard (live while listening), a light running along the dots while
+ * it listens and thinks, then the answer as it comes. Tap to close; swipe down to carry on in Prism.
+ */
+@Composable
+private fun AskCard(a: Ask) {
+    val nothing = Appearance.nothing
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DotBar(if (a.phase == Phase.Listening || a.phase == Phase.Thinking) null else 1f, if (a.error) Ink.bad else Ink.cyan, Modifier.width(46.dp))
+            Spacer(Modifier.width(10.dp))
+            val heard = when {
+                a.question.isNotBlank() -> a.question
+                a.phase == Phase.Listening -> "Listening"
+                else -> "Thinking"
+            }
+            Text(if (nothing && a.question.isBlank()) heard.uppercase() else heard, style = PrismTypography.labelMedium, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (a.answer.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                a.answer,
+                style = if (nothing) PrismTypography.bodyMedium.copy(fontFamily = NothingFonts.Mono, fontSize = 13.sp, lineHeight = 19.sp) else PrismTypography.bodyMedium,
+                color = if (a.error) Ink.bad else Color.White, maxLines = 7, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(if (nothing) "TAP TO CLOSE \u00B7 SWIPE DOWN FOR MORE" else "Tap to close \u00B7 swipe down for more", style = PrismTypography.labelSmall, color = Ink.tertiary, maxLines = 1)
+        }
+    }
+}
