@@ -57,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -92,6 +93,7 @@ import com.meetdheeran.prism.ui.motion.pressable
 import com.meetdheeran.prism.ui.theme.PrismColors
 import com.meetdheeran.prism.ui.theme.PrismTypography
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.sin
 import com.meetdheeran.prism.agent.Agent
@@ -369,6 +371,9 @@ private fun PillBody(
     onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onAskClose: () -> Unit, onAskMore: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
     onAgentStop: () -> Unit, onAgentAnswer: (Boolean) -> Unit, onAgentTap: () -> Unit, onAgentResultTap: () -> Unit,
 ) {
+    val tapScope = rememberCoroutineScope()
+    val tapClock = remember { longArrayOf(0L) }
+    val pendingTap = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
     Box {
         if (bare) {
             // Split: the gooey layer behind already draws this pill's black shape.
@@ -428,7 +433,18 @@ private fun PillBody(
                 .pointerInput(mode) {
                     detectTapGestures(
                         onTap = {
+                            // Every tap counts towards Morse's knock (the secret door). A tap only does its own thing
+                            // once no second one follows quickly: a quick run of taps is a knock, so the music card (or
+                            // anything else) doesn't pop up in the middle of it.
                             onTap()
+                            val now = android.os.SystemClock.uptimeMillis()
+                            val knocking = now - tapClock[0] < 350
+                            tapClock[0] = now
+                            pendingTap[0]?.cancel()
+                            pendingTap[0] = null
+                            if (knocking) return@detectTapGestures
+                            pendingTap[0] = tapScope.launch {
+                            delay(350)
                             when {
                                 // Tapping the island while the agent works stops it.
                                 // Tap while it works opens the step panel (with Stop); it no longer stops outright.
@@ -443,6 +459,7 @@ private fun PillBody(
                                 mode == Mode.EMPTY && state.notch -> Unit
                                 mode == Mode.EMPTY || mode == Mode.AI -> onAssistant()
                                 state.media != null -> onToggleExpand()
+                            }
                             }
                         },
                         onLongPress = { onAssistant() },
