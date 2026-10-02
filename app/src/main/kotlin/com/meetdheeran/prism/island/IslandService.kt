@@ -73,7 +73,14 @@ data class IslandEvent(val kind: Kind, val text: String, val at: Long) {
 /** What the island is showing. One "focus" at a time, priority: call > charging bloom > timer/nav > media. */
 data class IslandState(
     val media: NowPlaying? = null,
+    /** The most important live thing ([activities] first). */
     val activity: LiveActivity? = null,
+    /** Everything live right now (calls, navigation, timers, downloads), most important first. */
+    val activities: List<LiveActivity> = emptyList(),
+    /** Which live thing the person swiped to ("media", "charge" or an activity's key); null: the most important. */
+    val focusKey: String? = null,
+    /** Plugged in and not yet full: charging is one of the live things, as a dot bar. */
+    val chargingLive: Boolean = false,
     val battery: BatteryInfo = BatteryInfo(),
     /** elapsedRealtime when the cable went in; the bloom shows for 3 s after. */
     val chargedAt: Long = 0L,
@@ -130,7 +137,7 @@ data class IslandState(
         SystemClock.elapsedRealtime() - faceAt < (if (face == FaceScan.SCANNING) 12_000 else 1_400)
     /** Cards that close when you tap anywhere else on the screen. */
     val wantsOutsideTaps: Boolean get() = expanded || showAgentResult || (agentPanel && agent.running)
-    val hasContent: Boolean get() = (notch && !landscape) || showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
+    val hasContent: Boolean get() = (notch && !landscape) || activities.isNotEmpty() || chargingLive || showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
 }
 
 /** Battery broadcasts as flows. */
@@ -272,12 +279,9 @@ class IslandService : Service() {
             combine(graph.prefs.settings, MediaWatcher.now, PrismNotificationListener.activities, ch.info, ch.connectedAt) { s: Settings, np, acts, bat, at ->
                 IslandState(
                     media = if (s.islandShowMedia) np else null,
-                    activity = acts.firstOrNull { a ->
-                        when (a.kind) {
-                            LiveActivity.Kind.CALL -> s.islandShowCalls
-                            LiveActivity.Kind.TIMER, LiveActivity.Kind.NAVIGATION -> s.islandShowTimers
-                        }
-                    },
+                    activity = liveOnes(acts, s).firstOrNull(),
+                    activities = liveOnes(acts, s),
+                    chargingLive = s.islandShowCharging && bat.charging && bat.percent in 0..99,
                     battery = bat,
                     chargedAt = if (s.islandShowCharging) at else 0L,
                     pillWidthDp = cutoutWidthDp() + s.islandExtraWidthDp,
@@ -306,6 +310,7 @@ class IslandService : Service() {
                     faceAt = state.value.faceAt,
                     notch = inNotch,
                     landscape = state.value.landscape,
+                    focusKey = state.value.focusKey,
                 )
                 if (offsetChanged && showing) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
                 sync()
@@ -377,6 +382,36 @@ class IslandService : Service() {
         }
     }
 
+    /** The live things the island may show, by the person's settings, most important first. */
+    private fun liveOnes(acts: List<LiveActivity>, s: Settings): List<LiveActivity> = acts.filter { a ->
+        when (a.kind) {
+            LiveActivity.Kind.CALL -> s.islandShowCalls
+            LiveActivity.Kind.TIMER, LiveActivity.Kind.NAVIGATION, LiveActivity.Kind.PROGRESS -> s.islandShowTimers
+        }
+    }.sortedBy {
+        when (it.kind) {
+            LiveActivity.Kind.CALL -> 0
+            LiveActivity.Kind.NAVIGATION -> 1
+            LiveActivity.Kind.TIMER -> 2
+            LiveActivity.Kind.PROGRESS -> 3
+        }
+    }
+
+    /** Pull the island down: open what it's showing — the music app, the call, the download, the battery page. */
+    private fun openLive(key: String) {
+        val s = state.value
+        runCatching {
+            when (key) {
+                "media" -> s.media?.packageName?.let { pkg ->
+                    packageManager.getLaunchIntentForPackage(pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { startActivity(it) }
+                }
+                "charge" -> startActivity(Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                else -> s.activities.firstOrNull { it.key == key }?.contentIntent?.send()
+            }
+        }
+        if (s.expanded) setExpanded(false)
+    }
+
     private fun sync() {
         val s = state.value
         if (s.hasContent && !showing) { show(); refreshLens() } else if (!s.hasContent && showing) hide()
@@ -438,6 +473,8 @@ class IslandService : Service() {
                     IslandUi(
                         state = st,
                         onTap = { tapped() },
+                        onFocus = { key -> state.value = state.value.copy(focusKey = key) },
+                        onOpen = { key -> openLive(key) },
                         onToggleExpand = { setExpanded(!st.expanded) },
                         onAssistant = { openAssistant() },
                         onActivityTap = { a -> runCatching { a.contentIntent?.send() } },

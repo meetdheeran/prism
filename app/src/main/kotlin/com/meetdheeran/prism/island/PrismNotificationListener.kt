@@ -81,20 +81,31 @@ class PrismNotificationListener : NotificationListenerService() {
         val isCall = category == Notification.CATEGORY_CALL
         val isTimer = n.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false) || category == Notification.CATEGORY_ALARM
         val isNav = category == Notification.CATEGORY_NAVIGATION
-        if (ongoing && (isCall || isTimer || isNav)) {
+        // Downloads, uploads, installs: anything still showing a progress bar (a spinner only if it's ongoing).
+        val max = n.extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val done = n.extras.getInt(Notification.EXTRA_PROGRESS, 0)
+        val indeterminate = n.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)
+        val isProgress = sbn.packageName != packageName && ((max > 0 && done < max) || (indeterminate && ongoing))
+        if ((ongoing && (isCall || isTimer || isNav)) || isProgress) {
             val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
             val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
             live[sbn.key] = LiveActivity(
                 key = sbn.key,
                 packageName = sbn.packageName,
-                kind = when { isCall -> LiveActivity.Kind.CALL; isNav -> LiveActivity.Kind.NAVIGATION; else -> LiveActivity.Kind.TIMER },
+                kind = when { isCall -> LiveActivity.Kind.CALL; isNav -> LiveActivity.Kind.NAVIGATION; isTimer -> LiveActivity.Kind.TIMER; else -> LiveActivity.Kind.PROGRESS },
                 title = title,
                 text = text,
                 whenMs = n.`when`,
                 chronometerBase = if (isTimer) n.`when` else 0L,
                 countDown = n.extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false),
                 contentIntent = n.contentIntent,
+                progress = done,
+                progressMax = max,
+                indeterminate = indeterminate,
             )
+            _activities.value = live.values.toList()
+        } else if (live.remove(sbn.key) != null) {
+            // No longer live (a download finished, say): off the island.
             _activities.value = live.values.toList()
         }
     }
@@ -126,8 +137,15 @@ data class LiveActivity(
     val chronometerBase: Long,
     val countDown: Boolean,
     val contentIntent: android.app.PendingIntent?,
+    /** Downloads, uploads, installs: how far along ([progress] of [progressMax]), or [indeterminate]. */
+    val progress: Int = 0,
+    val progressMax: Int = 0,
+    val indeterminate: Boolean = false,
 ) {
-    enum class Kind { CALL, TIMER, NAVIGATION }
+    enum class Kind { CALL, TIMER, NAVIGATION, PROGRESS }
+
+    /** 0–1, or null when it doesn't say how far along. */
+    val fraction: Float? get() = if (progressMax > 0 && !indeterminate) (progress.toFloat() / progressMax).coerceIn(0f, 1f) else null
 }
 
 /** One ordinary notification, held in memory only. [icon] is the app's monochrome status-bar icon. */

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +35,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
+import kotlin.math.roundToInt
+import kotlin.math.abs
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.BatteryAlert
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Wifi
@@ -116,8 +121,19 @@ import com.meetdheeran.prism.ui.siri.Phase
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
+fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
     val backdrop = rememberBackdropState()
+    // Everything live at once (HyperOS-style): one shows in the island, up to two more wait in bubbles beside it;
+    // swipe the island sideways to switch, pull it down to open that app.
+    val items = remember(state.activities, state.media != null, state.chargingLive) {
+        buildList<Live> {
+            state.activities.forEach { add(Live.Act(it)) }
+            if (state.media != null) add(Live.Media)
+            if (state.chargingLive) add(Live.Charge)
+        }
+    }
+    val current = items.firstOrNull { it.key == state.focusKey } ?: items.firstOrNull()
+    val act = (current as? Live.Act)?.a
     val mode = when {
         state.agent.confirm != null -> Mode.AGENT_CONFIRM
         state.showFace -> Mode.FACE
@@ -126,25 +142,29 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
         state.agent.running && state.agentPanel -> Mode.AGENT_PANEL
         state.agent.running -> Mode.AGENT
         state.showAgentResult -> Mode.AGENT_RESULT
-        state.activity?.kind == LiveActivity.Kind.CALL -> Mode.CALL
+        act?.kind == LiveActivity.Kind.CALL -> Mode.CALL
         state.showAi -> Mode.AI
         state.showPeek -> Mode.PEEK
         state.showEvent -> Mode.EVENT
         state.showChargeBloom -> Mode.CHARGING
-        state.activity != null -> Mode.ACTIVITY
-        state.media != null -> Mode.MEDIA
+        act?.kind == LiveActivity.Kind.PROGRESS -> Mode.PROGRESS
+        act != null -> Mode.ACTIVITY
+        current == Live.Media -> Mode.MEDIA
+        current == Live.Charge -> Mode.CHARGE_LIVE
         else -> Mode.EMPTY
     }
     // In the notch: a tab exactly over the camera cutout (the pill's fine-tune doesn't apply); otherwise the pill.
     val tab = state.notch
     val base = if (tab) state.cutWidthDp.dp else state.pillWidthDp.dp
     val baseH = if (tab) (state.cutHeightDp + 1f).dp else state.pillHeightDp.dp
-    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
+    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
     val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
-    // In the notch the camera sits in the middle of the tab's top: whatever has words (or a glyph) is shown under it,
-    // the tab growing down out of the notch; music keeps art and bars either side of the camera, iPhone-style.
+    // In the notch the camera sits in the middle of the tab's top. Things that stay up (music, calls, timers,
+    // downloads, charging) sit either side of it, iPhone-style, within the status bar so they never cover the app;
+    // pops (a face scan, a peek, an event, cards) show under it, the tab growing down out of the notch.
     val cam = if (tab) state.cutHeightDp.dp else 0.dp
-    val below = tab && mode != Mode.EMPTY && mode != Mode.MEDIA
+    val compact = mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.CALL || mode == Mode.ACTIVITY || mode == Mode.PROGRESS || mode == Mode.CHARGE_LIVE
+    val below = tab && !compact
     val targetH = when (mode) {
         Mode.EXPANDED -> 156.dp + cam
         Mode.AGENT_CONFIRM -> 158.dp + cam
@@ -166,27 +186,28 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
     val lensRegistry = remember { LensRegistry() }
     val radiusPx = with(LocalDensity.current) { (if (big) 34.dp else baseH / 2).toPx() }
     val fallback = remember(state.media?.art) { lensFallback(state.media?.art) }
-    // Split: while the pill shows one thing, a second (music, or a timer) pops off into its own bubble,
-    // like the iPhone 18 Pro island. The two black shapes are drawn through a blur + alpha threshold
-    // (a "metaball"), so while they're close a liquid neck stretches between them and then snaps.
-    val secondary = if (!state.split) null else when {
-        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK || mode == Mode.FACE -> null
-        state.media != null -> Second.MEDIA
-        state.activity != null && mode != Mode.ACTIVITY && state.activity.kind != LiveActivity.Kind.CALL -> Second.TIMER
-        else -> null
+    // The other live things wait beside it as bubbles, like the iPhone 18 Pro island. The black shapes are drawn
+    // through a blur + alpha threshold (a "metaball"), so while they're close a liquid neck stretches between them
+    // and then snaps. While a pop shows (a peek, an event, the assistant), the live things all wait as bubbles.
+    val bubbles: List<Live> = when {
+        !state.split -> emptyList()
+        mode == Mode.EXPANDED || mode == Mode.EMPTY || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.UNLOCK || mode == Mode.FACE -> emptyList()
+        mode == Mode.MEDIA || mode == Mode.CALL || mode == Mode.ACTIVITY || mode == Mode.PROGRESS || mode == Mode.CHARGE_LIVE -> items.filter { it != current }.take(2)
+        else -> items.take(2)
     }
     val speed = Appearance.islandSpeed
     val split by animateFloatAsState(
-        if (secondary != null) 1f else 0f,
+        if (bubbles.isNotEmpty()) 1f else 0f,
         spring(dampingRatio = 0.55f, stiffness = 360f * speed * speed), label = "split",
     )
-    val lastSecondary = remember { mutableStateOf<Second?>(null) }
-    if (secondary != null) lastSecondary.value = secondary
+    val lastBubbles = remember { mutableStateOf<List<Live>>(emptyList()) }
+    if (bubbles.isNotEmpty()) lastBubbles.value = bubbles
     val splitting = split > 0.002f
+    val shown = if (bubbles.isNotEmpty()) bubbles else lastBubbles.value
     val bubble = baseH
     val gap = 8.dp
-    // Equal room on both sides keeps the pill centred on the camera while the bubble sits right.
-    val side = if (splitting) bubble + gap + 6.dp else 0.dp
+    // Equal room on both sides keeps the pill centred on the camera while the bubbles sit right.
+    val side = if (splitting) (bubble + gap) * shown.size + 6.dp else 0.dp
     // The bubble's middle: level with the row it belongs beside.
     val bubbleY = if (below) cam + (h - cam) / 2 else h / 2
     val density = LocalDensity.current
@@ -230,49 +251,74 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
                     if (tab) drawRoundRect(Color.Black, Offset(left, -h.toPx() / 2), Size(w.toPx(), h.toPx() * 1.5f), CornerRadius(h.toPx() / 2))
                     else drawRoundRect(Color.Black, Offset(left, 0f), Size(w.toPx(), h.toPx()), CornerRadius(h.toPx() / 2))
                     val r = bubble.toPx() / 2 * (0.55f + 0.45f * split.coerceIn(0f, 1.2f))
-                    // From tucked inside the pill's right end out to its resting spot, overshooting on the spring.
-                    val cx = left + w.toPx() - bubble.toPx() / 2 + (bubble + gap).toPx() * split
-                    drawCircle(Color.Black, r, Offset(cx, bubbleY.toPx()))
+                    // From tucked inside the pill's right end out to their resting spots, overshooting on the spring.
+                    for (i in shown.indices) {
+                        val cx = left + w.toPx() - bubble.toPx() / 2 + (bubble + gap).toPx() * (i + 1) * split
+                        drawCircle(Color.Black, r, Offset(cx, bubbleY.toPx()))
+                    }
                 }
             }
             Box(Modifier.offset(x = side)) {
-                PillBody(state, mode, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
             }
             if (splitting) {
-                val sec = secondary ?: lastSecondary.value
-                val x = side + w - bubble + (bubble + gap) * split
-                Box(
-                    Modifier
-                        .offset(x = x, y = bubbleY - bubble / 2)
-                        .size(bubble)
-                        .graphicsLayer {
-                            alpha = ((split - 0.55f) / 0.45f).coerceIn(0f, 1f)
-                            val sc = 0.8f + 0.2f * split.coerceAtMost(1f)
-                            scaleX = sc; scaleY = sc
-                        }
-                        .pointerInput(sec) {
-                            detectTapGestures(
-                                onTap = { if (sec == Second.MEDIA) onToggleExpand() else state.activity?.let(onActivityTap) },
-                                onLongPress = { onAssistant() },
-                            )
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    when (sec) {
-                        Second.MEDIA -> state.media?.let { np -> if (np.art != null && !Appearance.nothing) Art(np, bubble - 12.dp, CircleShape) else AudioBars(np.isPlaying) }
-                        Second.TIMER -> state.activity?.let { a ->
-                            if (a.chronometerBase > 0) MiniChrono(a.chronometerBase, a.countDown)
-                            else Icon(Icons.Rounded.HourglassBottom, null, tint = Ink.warm, modifier = Modifier.size(14.dp))
-                        }
-                        null -> Unit
-                    }
+                shown.forEachIndexed { i, live ->
+                    val x = side + w - bubble + (bubble + gap) * (i + 1) * split
+                    Box(
+                        Modifier
+                            .offset(x = x, y = bubbleY - bubble / 2)
+                            .size(bubble)
+                            .graphicsLayer {
+                                alpha = ((split - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                                val sc = 0.8f + 0.2f * split.coerceAtMost(1f)
+                                scaleX = sc; scaleY = sc
+                            }
+                            .pointerInput(live.key) {
+                                // Tap a bubble: it takes the island.
+                                detectTapGestures(onTap = { onTap(); onFocus(live.key) }, onLongPress = { onAssistant() })
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) { BubbleIcon(live, state, bubble) }
                 }
             }
         }
     }
 }
 
-private enum class Second { MEDIA, TIMER }
+/** One live thing the island can show. */
+private sealed interface Live {
+    val key: String
+
+    data class Act(val a: LiveActivity) : Live {
+        override val key: String get() = a.key
+    }
+
+    data object Media : Live {
+        override val key = "media"
+    }
+
+    data object Charge : Live {
+        override val key = "charge"
+    }
+}
+
+/** What a waiting live thing looks like in its bubble. */
+@Composable
+private fun BubbleIcon(live: Live, state: IslandState, size: androidx.compose.ui.unit.Dp) {
+    when (live) {
+        Live.Media -> state.media?.let { np -> if (np.art != null && !Appearance.nothing) Art(np, size - 12.dp, CircleShape) else AudioBars(np.isPlaying) }
+        Live.Charge -> Icon(Icons.Rounded.Bolt, null, tint = Ink.good, modifier = Modifier.size(14.dp))
+        is Live.Act -> when (live.a.kind) {
+            LiveActivity.Kind.CALL -> Icon(Icons.Rounded.Call, null, tint = Ink.good, modifier = Modifier.size(14.dp))
+            LiveActivity.Kind.NAVIGATION -> Icon(Icons.Rounded.Navigation, null, tint = Ink.warm, modifier = Modifier.size(14.dp))
+            LiveActivity.Kind.TIMER ->
+                if (live.a.chronometerBase > 0) MiniChrono(live.a.chronometerBase, live.a.countDown)
+                else Icon(Icons.Rounded.HourglassBottom, null, tint = Ink.warm, modifier = Modifier.size(14.dp))
+            LiveActivity.Kind.PROGRESS ->
+                Text(live.a.fraction?.let { "${(it * 100).roundToInt()}" } ?: "\u2026", style = PrismTypography.labelSmall, color = Ink.cyan, maxLines = 1)
+        }
+    }
+}
 
 /** Blur, then push alpha through a steep ramp: soft blobs become one hard shape with liquid necks. */
 private fun gooeyEffect(blurPx: Float): androidx.compose.ui.graphics.RenderEffect {
@@ -299,11 +345,12 @@ private fun MiniChrono(baseWallMs: Long, countDown: Boolean) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PillBody(
-    state: IslandState, mode: Mode, w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
+    state: IslandState, mode: Mode, act: LiveActivity?, currentKey: String?, keys: List<String>,
+    w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
     contentTop: androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
-    onTap: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
+    onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
     onAgentStop: () -> Unit, onAgentAnswer: (Boolean) -> Unit, onAgentTap: () -> Unit, onAgentResultTap: () -> Unit,
 ) {
     Box {
@@ -332,13 +379,31 @@ private fun PillBody(
                 .size(w, h)
                 // The tab is plain black, to be one with the camera cutout.
                 .then(if (bare || state.notch) Modifier else Modifier.liquidGlass(backdrop, shape, if (lensMode) GlassStyle.Island.copy(backdropless = true, tintAlpha = 0f, highlightAlpha = 0.10f, rimAlpha = 0.85f, innerShadowAlpha = 0f, elevation = 6.dp) else GlassStyle.Island, LocalTilt.current))
-                .pointerInput(mode) {
-                    // Swiping down on the island opens it (music), and never reaches the status bar under it.
+                .pointerInput(mode, currentKey) {
+                    // Pull the island down: open what it shows (the music app, the call, the download), never the
+                    // status bar under it.
                     var pulled = 0f
                     detectVerticalDragGestures(
                         onDragStart = { pulled = 0f },
-                        onDragEnd = { if (pulled > 36.dp.toPx() && state.media != null && !state.expanded) onToggleExpand() },
+                        onDragEnd = {
+                            if (pulled > 36.dp.toPx()) {
+                                if (mode == Mode.PEEK) state.peek?.let(onPeekTap) else currentKey?.let(onOpen)
+                            }
+                        },
                     ) { change, dy -> change.consume(); pulled += dy }
+                }
+                .pointerInput(keys, currentKey) {
+                    // Swipe sideways: the next live thing takes the island (HyperOS-style).
+                    var dx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            if (keys.size > 1 && abs(dx) > 32.dp.toPx()) {
+                                val i = keys.indexOf(currentKey).coerceAtLeast(0)
+                                onFocus(keys[(i + (if (dx < 0) 1 else -1) + keys.size) % keys.size])
+                            }
+                        },
+                    ) { change, d -> change.consume(); dx += d }
                 }
                 .pointerInput(mode) {
                     detectTapGestures(
@@ -350,7 +415,8 @@ private fun PillBody(
                                 mode == Mode.AGENT -> onAgentTap()
                                 mode == Mode.AGENT_RESULT -> onAgentResultTap()
                                 mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.UNLOCK || mode == Mode.FACE -> Unit
-                                mode == Mode.CALL || mode == Mode.ACTIVITY -> state.activity?.let(onActivityTap)
+                                mode == Mode.CALL || mode == Mode.ACTIVITY || mode == Mode.PROGRESS -> act?.let(onActivityTap)
+                                mode == Mode.CHARGE_LIVE -> Unit
                                 mode == Mode.PEEK -> state.peek?.let(onPeekTap)
                                 // The tab is always in the notch, so a stray tap mustn't open anything; hold talks.
                                 mode == Mode.EMPTY && state.notch -> Unit
@@ -369,8 +435,10 @@ private fun PillBody(
                     Mode.MEDIA -> state.media?.let { Collapsed(it) }
                     Mode.CHARGING -> Charging(state.battery)
                     Mode.EVENT -> state.event?.let { EventRow(it) }
-                    Mode.CALL -> state.activity?.let { CallRow(it) }
-                    Mode.ACTIVITY -> state.activity?.let { ActivityRow(it) }
+                    Mode.CALL -> act?.let { if (state.notch) CallSplit(it, state.cutWidthDp.dp) else CallRow(it) }
+                    Mode.ACTIVITY -> act?.let { if (state.notch) ActivitySplit(it, state.cutWidthDp.dp) else ActivityRow(it) }
+                    Mode.PROGRESS -> act?.let { if (state.notch) ProgressSplit(it, state.cutWidthDp.dp) else ProgressRow(it) }
+                    Mode.CHARGE_LIVE -> if (state.notch) ChargeSplit(state.battery, state.cutWidthDp.dp) else ChargeRow(state.battery)
                     Mode.EXPANDED -> state.media?.let { Expanded(it) }
                     Mode.AI -> AiRow(state.ai, state.aiLevel)
                     Mode.AGENT -> AgentRow(state.agent)
@@ -386,7 +454,7 @@ private fun PillBody(
     }
 }
 
-private enum class Mode { EMPTY, MEDIA, CHARGING, EVENT, CALL, ACTIVITY, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK, FACE }
+private enum class Mode { EMPTY, MEDIA, CHARGING, CHARGE_LIVE, EVENT, CALL, ACTIVITY, PROGRESS, EXPANDED, AI, PEEK, AGENT, AGENT_CONFIRM, AGENT_RESULT, AGENT_PANEL, UNLOCK, FACE }
 
 /** The agent's finished answer, big enough to read: stays 15 s, tap outside to close, tap it to open the chat. */
 @Composable
@@ -733,7 +801,15 @@ private fun ActivityRow(a: LiveActivity) {
     Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(if (a.kind == LiveActivity.Kind.NAVIGATION) Icons.Rounded.Navigation else Icons.Rounded.HourglassBottom, null, tint = Ink.warm, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
-        Text((a.title.ifBlank { a.text }).ifBlank { "Activity" }, style = PrismTypography.labelMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (a.kind == LiveActivity.Kind.TIMER && a.countDown && a.chronometerBase > 0) {
+            // A countdown drains its dots: the time left against how long it had when the island first saw it.
+            val total = remember(a.key) { (a.chronometerBase - System.currentTimeMillis()).coerceAtLeast(1_000L) }
+            var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(a.key) { while (true) { delay(1_000); now = System.currentTimeMillis() } }
+            DotBar(((a.chronometerBase - now).toFloat() / total).coerceIn(0f, 1f), Ink.warm, Modifier.weight(1f))
+        } else {
+            Text((a.title.ifBlank { a.text }).ifBlank { "Activity" }, style = PrismTypography.labelMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        }
         if (a.chronometerBase > 0) { Spacer(Modifier.width(6.dp)); Chrono(a.chronometerBase, a.countDown) }
     }
 }
@@ -811,3 +887,106 @@ private fun lensFallback(art: Bitmap?): Bitmap {
     }
     return out
 }
+
+/** Progress as a row of dots, Nothing's Glyph way: lit up to [fraction]; with no fraction, a light runs along it. */
+@Composable
+private fun DotBar(fraction: Float?, color: Color, modifier: Modifier = Modifier) {
+    val sweep = if (fraction == null) {
+        rememberInfiniteTransition(label = "dots").animateFloat(
+            0f, 1f, infiniteRepeatable(tween(1_100, easing = LinearEasing)), label = "sweep",
+        ).value
+    } else 0f
+    Canvas(modifier.height(8.dp)) {
+        val step = 9.dp.toPx()
+        val n = (size.width / step).toInt().coerceIn(3, 16)
+        val r = 2.2.dp.toPx()
+        val start = (size.width - step * n) / 2
+        for (i in 0 until n) {
+            val lit = if (fraction == null) (1f - abs(i / (n - 1f) - sweep) * 3f).coerceIn(0.22f, 1f)
+            else if ((i + 0.5f) / n <= fraction) 1f else 0.22f
+            drawCircle(color.copy(alpha = lit), r, Offset(start + step * (i + 0.5f), size.height / 2))
+        }
+    }
+}
+
+/** A download, upload or install: its dots filling up, and how far along. */
+@Composable
+private fun ProgressRow(a: LiveActivity) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Download, null, tint = Ink.cyan, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(8.dp))
+        DotBar(a.fraction, Ink.cyan, Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text(a.fraction?.let { "${(it * 100).roundToInt()}%" } ?: "", style = PrismTypography.labelMedium, color = Ink.cyan, maxLines = 1)
+    }
+}
+
+/** Charging, as long as it's plugged in: the battery as dots filling up. */
+@Composable
+private fun ChargeRow(b: BatteryInfo) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Bolt, null, tint = Ink.good, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        DotBar(if (b.percent >= 0) b.percent / 100f else null, Ink.good, Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text(if (b.percent >= 0) "${b.percent}%" else "", style = PrismTypography.labelMedium, color = Ink.good, maxLines = 1)
+    }
+}
+
+/** In the notch: [left] and [right] either side of the camera ([gap] wide), within the status bar. */
+@Composable
+private fun SplitRow(gap: androidx.compose.ui.unit.Dp, left: @Composable RowScope.() -> Unit, right: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { left() }
+        Spacer(Modifier.width(gap))
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { right() }
+    }
+}
+
+@Composable
+private fun CallSplit(a: LiveActivity, gap: androidx.compose.ui.unit.Dp) = SplitRow(
+    gap,
+    left = { Icon(Icons.Rounded.Call, null, tint = Ink.good, modifier = Modifier.size(14.dp)) },
+    right = { Elapsed(a.whenMs) },
+)
+
+@Composable
+private fun ActivitySplit(a: LiveActivity, gap: androidx.compose.ui.unit.Dp) = SplitRow(
+    gap,
+    left = {
+        Icon(if (a.kind == LiveActivity.Kind.NAVIGATION) Icons.Rounded.Navigation else Icons.Rounded.HourglassBottom, null, tint = Ink.warm, modifier = Modifier.size(13.dp))
+        if (a.kind == LiveActivity.Kind.TIMER && a.countDown && a.chronometerBase > 0) {
+            Spacer(Modifier.width(4.dp))
+            val total = remember(a.key) { (a.chronometerBase - System.currentTimeMillis()).coerceAtLeast(1_000L) }
+            var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(a.key) { while (true) { delay(1_000); now = System.currentTimeMillis() } }
+            DotBar(((a.chronometerBase - now).toFloat() / total).coerceIn(0f, 1f), Ink.warm, Modifier.weight(1f))
+        }
+    },
+    right = {
+        if (a.chronometerBase > 0) MiniChrono(a.chronometerBase, a.countDown)
+        else Text(a.title.ifBlank { a.text }, style = PrismTypography.labelSmall, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    },
+)
+
+@Composable
+private fun ProgressSplit(a: LiveActivity, gap: androidx.compose.ui.unit.Dp) = SplitRow(
+    gap,
+    left = {
+        Icon(Icons.Rounded.Download, null, tint = Ink.cyan, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(4.dp))
+        DotBar(a.fraction, Ink.cyan, Modifier.weight(1f))
+    },
+    right = { Text(a.fraction?.let { "${(it * 100).roundToInt()}%" } ?: "", style = PrismTypography.labelSmall, color = Ink.cyan, maxLines = 1) },
+)
+
+@Composable
+private fun ChargeSplit(b: BatteryInfo, gap: androidx.compose.ui.unit.Dp) = SplitRow(
+    gap,
+    left = {
+        Icon(Icons.Rounded.Bolt, null, tint = Ink.good, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(4.dp))
+        DotBar(if (b.percent >= 0) b.percent / 100f else null, Ink.good, Modifier.weight(1f))
+    },
+    right = { Text(if (b.percent >= 0) "${b.percent}%" else "", style = PrismTypography.labelSmall, color = Ink.good, maxLines = 1) },
+)
