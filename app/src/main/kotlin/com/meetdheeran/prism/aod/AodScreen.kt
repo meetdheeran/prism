@@ -58,6 +58,18 @@ import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import kotlin.random.Random
 
 private val White = Color(0xFFF2F2F2)
@@ -84,15 +96,56 @@ fun AodScreen(settings: com.meetdheeran.prism.core.Settings, onDismiss: () -> Un
     val notes by PrismNotificationListener.shadeItems.collectAsState()
     val media by MediaWatcher.now.collectAsState()
     val nothing = Appearance.nothing
+    // Leaving (double-tap): the clock lifts and fades before the lock screen takes over — the first part of the
+    // one-take: the home screen picks it up with its unlock animation.
+    val leave = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val leaveNow: () -> Unit = {
+        scope.launch {
+            leave.animateTo(1f, tween(280))
+            onDismiss()
+        }
+    }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onDismiss() }) },
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { leaveNow() }) },
     ) {
+        // Music playing: its cover fills the screen, blurred, dim and slowly drifting (still mostly black for the OLED).
+        val art = media?.takeIf { it.isPlaying && settings.aodShowMusic }?.art
+        if (art != null) {
+            val image = remember(art) { art.asImageBitmap() }
+            val drift by rememberInfiniteTransition(label = "aodArt").animateFloat(
+                0f, 1f, infiniteRepeatable(tween(24_000, easing = LinearEasing), RepeatMode.Reverse), label = "t",
+            )
+            Image(
+                image, null, contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val sc = 1.15f + 0.08f * drift
+                        scaleX = sc
+                        scaleY = sc
+                        translationX = (drift - 0.5f) * 30.dp.toPx()
+                        alpha = 0.3f * (1f - leave.value)
+                    }
+                    .blur(48.dp),
+            )
+        }
         Column(
-            Modifier.align(Alignment.Center).offset(shift.first.dp, shift.second.dp).padding(horizontal = 32.dp),
+            Modifier
+                .align(Alignment.Center)
+                .offset(shift.first.dp, shift.second.dp)
+                .graphicsLayer {
+                    alpha = 1f - leave.value
+                    val sc = 1f - 0.08f * leave.value
+                    scaleX = sc
+                    scaleY = sc
+                    translationY = -28.dp.toPx() * leave.value
+                }
+                .padding(horizontal = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val style = when (settings.aodClockStyle) { "dot", "thin", "bold" -> settings.aodClockStyle; else -> if (nothing) "dot" else "thin" }
@@ -103,6 +156,11 @@ fun AodScreen(settings: com.meetdheeran.prism.core.Settings, onDismiss: () -> Un
                 else -> GlassClock(now, scale, settings.aodShowDate)
             }
             Spacer(Modifier.height(10.dp))
+            // Charging: the battery as a row of dots filling up, Glyph-style.
+            if (settings.aodShowBattery && battery.charging) {
+                ChargeDots(battery.percent)
+                Spacer(Modifier.height(8.dp))
+            }
             if (settings.aodShowBattery) Text(
                 battery.label(),
                 style = if (nothing) TextStyle(fontFamily = NothingFonts.Mono, fontSize = 12.sp, letterSpacing = 1.sp, color = Grey)
@@ -229,4 +287,24 @@ private fun readBattery(ctx: Context): Battery {
     val status = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
     val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
     return Battery(pct, status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
+}
+
+/** Ten dots, lit for each tenth of the battery; the next one to fill blinks gently. */
+@Composable
+private fun ChargeDots(percent: Int) {
+    val lit = (percent.coerceIn(0, 100) + 5) / 10
+    val blink by rememberInfiniteTransition(label = "charge").animateFloat(
+        0.25f, 1f, infiniteRepeatable(tween(1_200, easing = LinearEasing), RepeatMode.Reverse), label = "b",
+    )
+    Canvas(Modifier.size(width = 130.dp, height = 8.dp)) {
+        val step = size.width / 10
+        for (i in 0 until 10) {
+            val a = when {
+                i < lit -> 1f
+                i == lit -> blink
+                else -> 0.18f
+            }
+            drawCircle(White.copy(alpha = a), 2.6.dp.toPx(), androidx.compose.ui.geometry.Offset(step * (i + 0.5f), size.height / 2))
+        }
+    }
 }
