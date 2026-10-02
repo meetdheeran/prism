@@ -262,7 +262,7 @@ fun SettingsScreen(nav: NavController) {
 
         GlassGroup(
             backdrop, "Dynamic Island",
-            footer = if (agentConnected) "In the notch: a black tab growing out of the top edge around the camera, above the status bar, so tapping it never pulls the notification bar down. Hold it to talk; tap it 4 times for Morse's secret door."
+            footer = if (agentConnected) "In the notch: a black tab growing out of the top edge around the camera, above the status bar, so tapping it never pulls the notification bar down. Hold it to talk; tap along the top edge 4 times for Morse's secret door."
             else "A pill around the camera notch for music and live activities. Switch on Prism's phone agent in Accessibility and it moves into the notch itself, above the status bar. Needs 'Display over other apps' and, for music, notification access.",
         ) {
             SwitchRow("Enable island", checked = settings.islandEnabled) { on ->

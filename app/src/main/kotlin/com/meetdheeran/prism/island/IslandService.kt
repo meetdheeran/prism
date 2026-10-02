@@ -62,7 +62,7 @@ const val ACTION_FACE = "com.meetdheeran.prism.ISLAND_FACE"
 const val ACTION_ISLAND_BOUNDS = "com.meetdheeran.prism.ISLAND_BOUNDS"
 
 private const val MORSE = "com.meetdheeran.morse"
-private const val MORSE_SECRET_DOOR = "com.meetdheeran.morse.SECRET_DOOR"
+private const val MORSE_KNOCK_TAP = "com.meetdheeran.morse.KNOCK_TAP"
 
 /** A 3-second pop: low battery, Wi-Fi or Bluetooth connected. */
 data class IslandEvent(val kind: Kind, val text: String, val at: Long) {
@@ -334,19 +334,12 @@ class IslandService : Service() {
         sync()
     }
 
-    /** Four taps within 1.5 s anywhere on the island knock on Morse's secret door (hidden apps, face first). */
-    private val taps = ArrayDeque<Long>()
-
+    /**
+     * Each tap on the island goes to Morse, which counts them with taps along the rest of the top edge: four quick
+     * ones knock on its secret door (hidden apps, face first).
+     */
     private fun tapped() {
-        val now = SystemClock.uptimeMillis()
-        taps.addLast(now)
-        while (taps.isNotEmpty() && now - taps.first() > 1_500) taps.removeFirst()
-        if (taps.size < 4) return
-        taps.clear()
-        if (state.value.expanded) setExpanded(false)
-        runCatching {
-            startActivity(Intent(MORSE_SECRET_DOOR).setPackage(MORSE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
+        runCatching { sendBroadcast(Intent(MORSE_KNOCK_TAP).setPackage(MORSE)) }
     }
 
     /**
