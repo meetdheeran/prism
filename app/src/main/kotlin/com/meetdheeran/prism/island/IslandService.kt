@@ -15,6 +15,11 @@ import android.os.SystemClock
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.ui.geometry.Rect
+import kotlin.math.roundToInt
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Box
 import com.meetdheeran.prism.core.IslandStyle
 import com.meetdheeran.prism.shizuku.ShizukuBridge
 import android.view.Gravity
@@ -70,6 +75,9 @@ const val ACTION_ISLAND_BOUNDS = "com.meetdheeran.prism.ISLAND_BOUNDS"
 const val ACTION_ISLAND_BOUNDS_ASK = "com.meetdheeran.prism.ISLAND_BOUNDS_ASK"
 
 private const val MORSE = "com.meetdheeran.morse"
+
+/** In the notch, how far down the island's window reaches below the camera: its tallest card, with room to spare. */
+private const val STAGE_DP = 320f
 private const val MORSE_KNOCK_TAP = "com.meetdheeran.morse.KNOCK_TAP"
 
 /** A question asked by holding the island, answered right there: listening, thinking, then the answer. */
@@ -195,6 +203,8 @@ class ChargingWatcher(private val ctx: Context) {
 class IslandService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var host: OverlayHost? = null
+    /** In the notch, the island's touch area (its window there lets touches through; see [params]). */
+    private var pad: IslandPad? = null
     private var charging: ChargingWatcher? = null
     private val state = MutableStateFlow(IslandState())
     private val events = MutableStateFlow<IslandEvent?>(null)
@@ -290,7 +300,7 @@ class IslandService : Service() {
         boundsAsk = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 sentBounds = IntArray(3)
-                reportBounds(if (showing) host?.view else null)
+                reportBounds()
             }
         }
         ContextCompat.registerReceiver(this, boundsAsk!!, IntentFilter(ACTION_ISLAND_BOUNDS_ASK), ContextCompat.RECEIVER_EXPORTED)
@@ -333,7 +343,7 @@ class IslandService : Service() {
                     focusKey = state.value.focusKey,
                     ask = state.value.ask,
                 )
-                if (offsetChanged && showing) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
+                if (offsetChanged && showing && !inNotch) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
                 sync()
                 refreshOutsideWatch()
                 if (next.showChargeBloom || next.showEvent || next.showPeek || next.showAgentResult) {
@@ -362,10 +372,12 @@ class IslandService : Service() {
         if (notch == inNotch && host != null) return
         if (showing) hide()
         host?.destroy()
+        pad?.hide()
         val svc = if (notch) AgentAccessibilityService.instance else null
         inNotch = svc != null
         host = if (svc != null) OverlayHost(svc, accessibility = true) else OverlayHost(this)
-        if (!inNotch) reportBounds(null)
+        pad = svc?.let { IslandPad(it, island = { host?.view }, onOutside = { outsideTap() }) }
+        if (!inNotch) reportBounds()
         state.value = state.value.copy(notch = inNotch)
         sync()
     }
@@ -378,23 +390,37 @@ class IslandService : Service() {
         runCatching { sendBroadcast(Intent(MORSE_KNOCK_TAP).setPackage(MORSE)) }
     }
 
+    /** In the notch, where the island takes touches on the screen (px): its pad's bounds. Empty while hidden. */
+    private val touchArea = android.graphics.Rect()
+
+    /** The island laid out its touch area ([r], in its window's px): the pad follows, and Morse is told. */
+    private fun placePad(r: Rect) {
+        val v = host?.view ?: return
+        val at = IntArray(2)
+        v.getLocationOnScreen(at)
+        val next = android.graphics.Rect(
+            at[0] + kotlin.math.floor(r.left).toInt(), at[1] + kotlin.math.floor(r.top).toInt(),
+            at[0] + kotlin.math.ceil(r.right).toInt(), at[1] + kotlin.math.ceil(r.bottom).toInt(),
+        )
+        if (!showing || !inNotch || next == touchArea) return
+        touchArea.set(next)
+        pad?.place(next, watchingOutside)
+        reportBounds()
+    }
+
     /**
-     * Where the island's window is, sent to Morse so its Nothing bar strips (also over the status bar) leave room
-     * around it — at most every 120 ms while the island animates, and once more when it settles.
+     * Where the island takes touches, sent to Morse so its Nothing bar strips (also over the status bar) leave room
+     * around it — 120 ms after it last changed.
      */
     private var boundsJob: Job? = null
     private var sentBounds = IntArray(3)
 
-    private fun reportBounds(view: android.view.View?) {
+    private fun reportBounds() {
         boundsJob?.cancel()
         boundsJob = scope.launch {
             delay(120)
             val b = IntArray(3)
-            if (view != null && view.isAttachedToWindow && inNotch) {
-                val at = IntArray(2)
-                view.getLocationOnScreen(at)
-                b[0] = at[0]; b[1] = at[0] + view.width; b[2] = at[1] + view.height
-            }
+            if (showing && inNotch && !touchArea.isEmpty) { b[0] = touchArea.left; b[1] = touchArea.right; b[2] = touchArea.bottom }
             if (b.contentEquals(sentBounds)) return@launch
             sentBounds = b
             runCatching {
@@ -473,68 +499,87 @@ class IslandService : Service() {
     private fun cutoutWidthDp(): Float = (cutout()?.width() ?: 180) / resources.displayMetrics.density
     private fun cutoutHeightDp(): Float = (cutout()?.height() ?: 80) / resources.displayMetrics.density
 
-    private fun params(expanded: Boolean): WindowManager.LayoutParams = OverlayHost.params(
-        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL, focusable = false,
-        // In the notch the tab hangs from the very top edge; the pill keeps the person's "move down".
-        y = if (inNotch) 0 else offsetPx,
-        type = if (inNotch) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-    ).apply {
-        if (inNotch) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        if (expanded) flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+    /**
+     * The island's window. In the notch: a screen-wide strip along the top edge that never moves or resizes and lets
+     * every touch through ([pad] takes the island's) — Android re-centres a window that changes size a frame apart from
+     * its picture, which made the island jump sideways as it opened and closed. A trusted (accessibility) overlay, so
+     * touches through it reach the apps underneath. Out of the notch: the old pill window wrapping the island, with
+     * the person's "move down".
+     */
+    private fun params(expanded: Boolean): WindowManager.LayoutParams = if (inNotch) {
+        OverlayHost.params(
+            width = WindowManager.LayoutParams.MATCH_PARENT,
+            height = ((cutoutHeightDp() + STAGE_DP) * resources.displayMetrics.density).roundToInt(),
+            gravity = Gravity.TOP, touchable = false,
+            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        ).apply { layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS }
+    } else {
+        OverlayHost.params(
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL, focusable = false, y = offsetPx,
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        ).apply { if (expanded) flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH }
     }
 
     private fun show() {
         val h = host ?: return
         showing = true
+        val wide = inNotch
         h.show(params(false)) {
             val tilt by rememberDeviceTilt()
             val st by state.collectAsState()
             PrismTheme(accent = Color(0xFF0A84FF)) {
                 CompositionLocalProvider(LocalTilt provides tilt) {
-                    IslandUi(
-                        state = st,
-                        onTap = { tapped() },
-                        onFocus = { key -> state.value = state.value.copy(focusKey = key) },
-                        onOpen = { key -> openLive(key) },
-                        onAskClose = { endAsk() },
-                        onAskMore = { askMore() },
-                        onToggleExpand = { setExpanded(!st.expanded) },
-                        onAssistant = { holdIsland() },
-                        onActivityTap = { a -> runCatching { a.contentIntent?.send() } },
-                        onPeekTap = { n -> runCatching { n.contentIntent?.send() } },
-                        onAgentStop = { setAgentPanel(false); Agent.stop() },
-                        onAgentAnswer = { allow -> Agent.answer(allow) },
-                        onAgentTap = { setAgentPanel(!state.value.agentPanel) },
-                        onAgentResultTap = { openAgentConversation() },
-                    )
+                    // In the notch the window is a screen-wide strip: the island hangs from the middle of its top.
+                    Box(if (wide) Modifier.fillMaxWidth() else Modifier, contentAlignment = Alignment.TopCenter) {
+                        IslandUi(
+                            state = st,
+                            onTap = { tapped() },
+                            onFocus = { key -> state.value = state.value.copy(focusKey = key) },
+                            onOpen = { key -> openLive(key) },
+                            onAskClose = { endAsk() },
+                            onAskMore = { askMore() },
+                            onToggleExpand = { setExpanded(!st.expanded) },
+                            onAssistant = { holdIsland() },
+                            onActivityTap = { a -> runCatching { a.contentIntent?.send() } },
+                            onPeekTap = { n -> runCatching { n.contentIntent?.send() } },
+                            onAgentStop = { setAgentPanel(false); Agent.stop() },
+                            onAgentAnswer = { allow -> Agent.answer(allow) },
+                            onAgentTap = { setAgentPanel(!state.value.agentPanel) },
+                            onAgentResultTap = { openAgentConversation() },
+                            onHitArea = { r -> placePad(r) },
+                        )
+                    }
                 }
             }
         }
-        h.view?.let { v ->
-            v.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ -> reportBounds(view) }
-            reportBounds(v)
-        }
+        // Out of the notch the window is the island itself, and hears the taps outside it.
         h.view?.setOnTouchListener { _, ev ->
-            if (ev.action == MotionEvent.ACTION_OUTSIDE) {
-                val s = state.value
-                when {
-                    s.ask != null -> endAsk()
-                    s.showAgentResult -> Agent.dismissResult()
-                    s.agentPanel -> setAgentPanel(false)
-                    s.expanded -> setExpanded(false)
-                }
-            }
+            if (ev.action == MotionEvent.ACTION_OUTSIDE) outsideTap()
             false
+        }
+    }
+
+    /** A tap anywhere else on the screen closes the card that's open. */
+    private fun outsideTap() {
+        val s = state.value
+        when {
+            s.ask != null -> endAsk()
+            s.showAgentResult -> Agent.dismissResult()
+            s.agentPanel -> setAgentPanel(false)
+            s.expanded -> setExpanded(false)
         }
     }
 
     /** Ask for outside taps only while a closable card is showing; otherwise the window stays out of the way. */
     private fun refreshOutsideWatch() {
         val want = state.value.wantsOutsideTaps
-        if (showing && want != watchingOutside) {
-            host?.update(params(want))
-            watchingOutside = want
-        }
+        if (showing && want != watchingOutside) watchOutside(want)
+    }
+
+    /** In the notch the pad hears the taps outside; out of it, the island's own window. */
+    private fun watchOutside(want: Boolean) {
+        watchingOutside = want
+        if (inNotch) { if (!touchArea.isEmpty) pad?.place(touchArea, want) } else host?.update(params(want))
     }
 
     private fun setAgentPanel(open: Boolean) {
@@ -556,7 +601,7 @@ class IslandService : Service() {
 
     private fun setExpanded(expanded: Boolean) {
         state.value = state.value.copy(expanded = expanded)
-        host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps
+        watchOutside(state.value.wantsOutsideTaps)
         collapseJob?.cancel()
         if (expanded) collapseJob = scope.launch { delay(5_000); setExpanded(false) }
         scope.launch { delay(350); refreshLens() }
@@ -564,8 +609,11 @@ class IslandService : Service() {
 
     private fun hide() {
         showing = false
+        watchingOutside = false
+        pad?.hide()
+        touchArea.setEmpty()
         host?.hide()
-        reportBounds(null)
+        reportBounds()
     }
 
     private fun openAssistant() {

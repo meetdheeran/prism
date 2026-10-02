@@ -2,6 +2,12 @@ package com.meetdheeran.prism.island
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -123,7 +129,7 @@ import com.meetdheeran.prism.ui.siri.Phase
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onAskClose: () -> Unit = {}, onAskMore: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
+fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onAskClose: () -> Unit = {}, onAskMore: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}, onHitArea: (androidx.compose.ui.geometry.Rect) -> Unit = {}) {
     val backdrop = rememberBackdropState()
     // Everything live at once (HyperOS-style): one shows in the island, up to two more wait in bubbles beside it;
     // swipe the island sideways to switch, pull it down to open that app.
@@ -160,29 +166,36 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val tab = state.notch
     val base = if (tab) state.cutWidthDp.dp else state.pillWidthDp.dp
     val baseH = if (tab) (state.cutHeightDp + 1f).dp else state.pillHeightDp.dp
-    val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp }
     val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
     // In the notch the camera sits in the middle of the tab's top. Things that stay up (music, calls, timers,
     // downloads, charging) sit either side of it, iPhone-style, within the status bar so they never cover the app;
     // pops (a face scan, a peek, an event, cards) show under it, the tab growing down out of the notch.
     val cam = if (tab) state.cutHeightDp.dp else 0.dp
-    val compact = mode == Mode.EMPTY || mode == Mode.MEDIA || mode == Mode.CALL || mode == Mode.ACTIVITY || mode == Mode.PROGRESS || mode == Mode.CHARGE_LIVE
-    val below = tab && !compact
     val askLines = state.ask?.answer.orEmpty().let { r -> if (r.isEmpty()) 0 else r.lines().sumOf { 1 + it.length / 36 } }.coerceIn(0, 7)
-    val targetH = when (mode) {
-        Mode.ASK -> cam + (if (askLines == 0) 46.dp else 64.dp + 20.dp * askLines)
-        Mode.EXPANDED -> 156.dp + cam
-        Mode.AGENT_CONFIRM -> 158.dp + cam
-        Mode.AGENT_PANEL -> 176.dp + cam
-        Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines + cam
-        Mode.UNLOCK, Mode.FACE -> if (tab) cam + 52.dp else baseH + 34.dp
-        else -> if (below) cam + 30.dp else baseH
-    }
+    fun under(m: Mode) = tab && !(m == Mode.EMPTY || m == Mode.MEDIA || m == Mode.CALL || m == Mode.ACTIVITY || m == Mode.PROGRESS || m == Mode.CHARGE_LIVE)
+    /** How big the island is when it shows [m]; each look is also laid out at this size (see [PillBody]). */
+    fun sizeOf(m: Mode) = DpSize(
+        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 312.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
+        when (m) {
+            Mode.ASK -> cam + (if (askLines == 0) 46.dp else 64.dp + 20.dp * askLines)
+            Mode.EXPANDED -> 138.dp + cam
+            Mode.AGENT_CONFIRM -> 158.dp + cam
+            Mode.AGENT_PANEL -> 176.dp + cam
+            Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines + cam
+            Mode.UNLOCK, Mode.FACE -> if (tab) cam + 52.dp else baseH + 34.dp
+            else -> if (under(m)) cam + 30.dp else baseH
+        },
+    )
+    val below = under(mode)
+    val target = sizeOf(mode)
+    val targetW = target.width
+    val targetH = target.height
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
-    // The window keeps one size while the island animates (the biggest it will be), and only the black shape moves
-    // inside it: a window resized every frame lags, and Android stretches its old picture until the new one is drawn.
+    // The island's touch area (in the notch its pad window, otherwise the window itself) keeps one size while the
+    // island animates — the biggest it will be — and only the black shape moves inside it, so windows change when the
+    // island starts and stops changing, never every frame.
     val hold = remember { floatArrayOf(0f, 0f) }
     if (kotlin.math.abs(w.value - targetW.value) < 0.5f && kotlin.math.abs(h.value - targetH.value) < 0.5f) {
         hold[0] = targetW.value
@@ -195,7 +208,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val spanH = hold[1].dp
     val dx = (spanW - w) / 2
     val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.ASK
-    val corner = when { big -> 34.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }
+    val corner by animateDpAsState(when { big -> 32.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }, islandSpring, label = "corner")
     // The tab is flush with the screen's top edge: square on top, rounded below.
     val shape = if (tab) RoundedCornerShape(0.dp, 0.dp, corner, corner) else RoundedCornerShape(corner)
 
@@ -237,8 +250,11 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     // Morse's secret door), so a tap near the notch never lands on what's under it.
     val tapNow by rememberUpdatedState(onTap)
     val holdNow by rememberUpdatedState(onAssistant)
+    val hitNow by rememberUpdatedState(onHitArea)
     val hitArea = if (tab) {
         Modifier
+            // Where the island takes touches, for its pad window (IslandPad).
+            .onGloballyPositioned { hitNow(it.boundsInWindow()) }
             .pointerInput(Unit) { detectTapGestures(onTap = { tapNow() }, onLongPress = { holdNow() }) }
             .padding(start = 24.dp, end = 24.dp, bottom = 10.dp)
     } else Modifier
@@ -277,7 +293,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                 }
             }
             Box(Modifier.offset(x = side + dx)) {
-                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
             }
             if (splitting) {
                 shown.forEachIndexed { i, live ->
@@ -365,7 +381,7 @@ private fun MiniChrono(baseWallMs: Long, countDown: Boolean) {
 private fun PillBody(
     state: IslandState, mode: Mode, act: LiveActivity?, currentKey: String?, keys: List<String>,
     w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
-    contentTop: androidx.compose.ui.unit.Dp,
+    sizeOf: (Mode) -> DpSize, topOf: (Mode) -> androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
     onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onAskClose: () -> Unit, onAskMore: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
@@ -467,26 +483,39 @@ private fun PillBody(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            AnimatedContent(mode, Modifier.fillMaxSize().padding(top = contentTop), transitionSpec = { fadeIn(Motion.fade(200)) togetherWith fadeOut(Motion.fade(120)) }, label = "island") { m ->
-                when (m) {
-                    Mode.EMPTY -> Box(Modifier.fillMaxSize())
-                    Mode.MEDIA -> state.media?.let { Collapsed(it) }
-                    Mode.CHARGING -> Charging(state.battery)
-                    Mode.EVENT -> state.event?.let { EventRow(it) }
-                    Mode.CALL -> act?.let { if (state.notch) CallSplit(it, state.cutWidthDp.dp) else CallRow(it) }
-                    Mode.ACTIVITY -> act?.let { if (state.notch) ActivitySplit(it, state.cutWidthDp.dp) else ActivityRow(it) }
-                    Mode.PROGRESS -> act?.let { if (state.notch) ProgressSplit(it, state.cutWidthDp.dp) else ProgressRow(it) }
-                    Mode.CHARGE_LIVE -> if (state.notch) ChargeSplit(state.battery, state.cutWidthDp.dp) else ChargeRow(state.battery)
-                    Mode.EXPANDED -> state.media?.let { Expanded(it) }
-                    Mode.AI -> AiRow(state.ai, state.aiLevel)
-                    Mode.AGENT -> AgentRow(state.agent)
-                    Mode.AGENT_CONFIRM -> state.agent.confirm?.let { AgentConfirmCard(it, onAgentAnswer) }
-                    Mode.AGENT_RESULT -> AgentResultCard(state.agent)
-                    Mode.AGENT_PANEL -> AgentPanelCard(state.agent, onStop = onAgentStop, onHide = onAgentTap)
-                    Mode.UNLOCK -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { UnlockGlyph() }
-                    Mode.FACE -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FaceScanGlyph(state.face) }
-                    Mode.PEEK -> state.peek?.let { PeekRow(it) }
-                    Mode.ASK -> state.ask?.let { AskCard(it) }
+            // Each look is laid out at its own final size, hanging from the top, and the black shape reveals it as the
+            // island grows (and clips it as it shrinks): nothing inside squeezes or reflows while the island animates.
+            AnimatedContent(
+                mode, Modifier.fillMaxSize().clip(shape),
+                transitionSpec = {
+                    (fadeIn(Motion.fade(200)) + scaleIn(Motion.fade(320), initialScale = 0.92f, transformOrigin = TransformOrigin(0.5f, 0f))) togetherWith fadeOut(Motion.fade(120))
+                },
+                label = "island",
+            ) { m ->
+                Box(
+                    Modifier.fillMaxSize().wrapContentSize(Alignment.TopCenter, unbounded = true).size(sizeOf(m)).padding(top = topOf(m)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (m) {
+                        Mode.EMPTY -> Box(Modifier.fillMaxSize())
+                        Mode.MEDIA -> state.media?.let { Collapsed(it) }
+                        Mode.CHARGING -> Charging(state.battery)
+                        Mode.EVENT -> state.event?.let { EventRow(it) }
+                        Mode.CALL -> act?.let { if (state.notch) CallSplit(it, state.cutWidthDp.dp) else CallRow(it) }
+                        Mode.ACTIVITY -> act?.let { if (state.notch) ActivitySplit(it, state.cutWidthDp.dp) else ActivityRow(it) }
+                        Mode.PROGRESS -> act?.let { if (state.notch) ProgressSplit(it, state.cutWidthDp.dp) else ProgressRow(it) }
+                        Mode.CHARGE_LIVE -> if (state.notch) ChargeSplit(state.battery, state.cutWidthDp.dp) else ChargeRow(state.battery)
+                        Mode.EXPANDED -> state.media?.let { Expanded(it) }
+                        Mode.AI -> AiRow(state.ai, state.aiLevel)
+                        Mode.AGENT -> AgentRow(state.agent)
+                        Mode.AGENT_CONFIRM -> state.agent.confirm?.let { AgentConfirmCard(it, onAgentAnswer) }
+                        Mode.AGENT_RESULT -> AgentResultCard(state.agent)
+                        Mode.AGENT_PANEL -> AgentPanelCard(state.agent, onStop = onAgentStop, onHide = onAgentTap)
+                        Mode.UNLOCK -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { UnlockGlyph() }
+                        Mode.FACE -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FaceScanGlyph(state.face) }
+                        Mode.PEEK -> state.peek?.let { PeekRow(it) }
+                        Mode.ASK -> state.ask?.let { AskCard(it) }
+                    }
                 }
             }
         }
@@ -876,10 +905,10 @@ private fun Expanded(np: NowPlaying) {
     var tick by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(np.isPlaying) { while (true) { delay(500); tick = SystemClock.elapsedRealtime() } }
     val pos = np.livePosition(tick)
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Art(np, 54.dp, RoundedCornerShape(12.dp))
-            Spacer(Modifier.width(12.dp))
+            Art(np, 46.dp, RoundedCornerShape(11.dp))
+            Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
                 Text(np.title, style = PrismTypography.titleSmall, color = Color.White, maxLines = 1, modifier = Modifier.basicMarquee())
                 Text(np.artist, style = PrismTypography.bodySmall, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -887,23 +916,23 @@ private fun Expanded(np: NowPlaying) {
             Spacer(Modifier.width(8.dp))
             AudioBars(np.isPlaying)
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(9.dp))
         val frac = if (np.durationMs > 0) (pos.toFloat() / np.durationMs).coerceIn(0f, 1f) else 0f
         Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f))) {
             Box(Modifier.fillMaxWidth(frac).height(4.dp).background(Color.White))
         }
         Row(Modifier.fillMaxWidth().padding(top = 3.dp)) {
-            Text(fmt(pos), fontSize = 10.sp, color = Ink.tertiary)
+            Text(fmt(pos), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
             Spacer(Modifier.weight(1f))
-            Text("-" + fmt((np.durationMs - pos).coerceAtLeast(0)), fontSize = 10.sp, color = Ink.tertiary)
+            Text("-" + fmt((np.durationMs - pos).coerceAtLeast(0)), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.weight(1f))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(34.dp).pressable { MediaWatcher.previous() })
-            Spacer(Modifier.width(26.dp))
-            Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(40.dp).pressable { MediaWatcher.toggle() })
-            Spacer(Modifier.width(26.dp))
-            Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(34.dp).pressable { MediaWatcher.next() })
+            Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(30.dp).pressable { MediaWatcher.previous() })
+            Spacer(Modifier.width(24.dp))
+            Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(36.dp).pressable { MediaWatcher.toggle() })
+            Spacer(Modifier.width(24.dp))
+            Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(30.dp).pressable { MediaWatcher.next() })
         }
     }
 }
