@@ -150,6 +150,15 @@
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/agent_accessibility" />
         </service>
         <!-- Always-on display: its own task so closing it lands on the lock screen, not in Prism. -->
+        <!-- Morse's "Make your own" widgets: a description in, a small widget spec back (through the configured AI). -->
+        <receiver
+            android:name=".ai.WidgetMakerReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.meetdheeran.prism.MAKE_WIDGET" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".aod.AodActivity"
             android:exported="false"

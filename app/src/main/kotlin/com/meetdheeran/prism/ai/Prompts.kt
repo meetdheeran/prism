@@ -94,6 +94,20 @@ object Prompts {
      * Default system prompt for [AssistantEngine.quick]: stateless one-shots such as
      * rewrite / summarize / translate, where the caller wants the result and nothing else.
      */
+    /** Morse's "Make your own" widget: a description in, one JSON object out (see Morse's AiSpec). */
+    fun widget(today: String): String = buildString {
+        appendLine("You turn a description of a phone home-screen widget into JSON for the launcher. Today is $today.")
+        appendLine("Reply with ONE JSON object and nothing else (no markdown, no explanation), with these fields:")
+        appendLine("\"title\": a short label, at most 18 characters;")
+        appendLine("\"kind\": one of \"countdown\" (days until a date), \"countup\" (days since a date), \"counter\" (a number the person taps to add one), \"progress\" (value out of target, tap adds one), \"checklist\" (up to 5 short items ticked one by one), \"text\" (a few fixed words);")
+        appendLine("\"date\": an ISO date like 2026-12-03, for countdown and countup (resolve relative dates from today; a past date this year means next year for a countdown);")
+        appendLine("\"items\": a list of short strings, for checklist;")
+        appendLine("\"value\" and \"target\": numbers, for counter and progress (target 0 means no target);")
+        appendLine("\"unit\": the word after the number, like \"days\" or \"glasses\";")
+        appendLine("\"text\": for text, at most 60 characters.")
+        append("If the description can't be done with these, use kind \"text\" and say in a few words what it would show.")
+    }
+
     /** A question asked by holding the island: the answer has to fit there. */
     fun island(settings: Settings): String {
         val name = settings.assistantName.ifBlank { "Prism" }
