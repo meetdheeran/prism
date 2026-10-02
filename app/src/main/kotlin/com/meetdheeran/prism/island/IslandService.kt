@@ -43,6 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.meetdheeran.prism.assistant.AssistantPulse
 import com.meetdheeran.prism.agent.Agent
+import com.meetdheeran.prism.agent.AgentAccessibilityService
 import com.meetdheeran.prism.ui.siri.Phase
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -56,6 +57,12 @@ data class BatteryInfo(val percent: Int = -1, val charging: Boolean = false)
 enum class FaceScan { OFF, SCANNING, OK, FAIL }
 
 const val ACTION_FACE = "com.meetdheeran.prism.ISLAND_FACE"
+
+/** Where the island is (left, right, bottom in px; all 0 when it isn't over the status bar), sent to Morse. */
+const val ACTION_ISLAND_BOUNDS = "com.meetdheeran.prism.ISLAND_BOUNDS"
+
+private const val MORSE = "com.meetdheeran.morse"
+private const val MORSE_SECRET_DOOR = "com.meetdheeran.morse.SECRET_DOOR"
 
 /** A 3-second pop: low battery, Wi-Fi or Bluetooth connected. */
 data class IslandEvent(val kind: Kind, val text: String, val at: Long) {
@@ -97,6 +104,16 @@ data class IslandState(
     /** Another app's face check (Morse), and when its state last changed. */
     val face: FaceScan = FaceScan.OFF,
     val faceAt: Long = 0L,
+    /**
+     * In the notch: the island lives in Prism's accessibility service, above the status bar, as a black tab growing
+     * out of the top edge around the camera — always there (so it can always be tapped), and taps never reach the
+     * status bar. Off (no accessibility switch): the old floating pill under the status bar.
+     */
+    val notch: Boolean = false,
+    /** The real cutout, for the tab (the pill adds the person's fine-tune instead). */
+    val cutWidthDp: Float = 64f,
+    val cutHeightDp: Float = 28f,
+    val landscape: Boolean = false,
     /** Bumped when a timed pop (bloom, event, peek) expires, so the UI re-reads the clock. */
     val tick: Long = 0L,
 ) {
@@ -112,7 +129,7 @@ data class IslandState(
         SystemClock.elapsedRealtime() - faceAt < (if (face == FaceScan.SCANNING) 12_000 else 1_400)
     /** Cards that close when you tap anywhere else on the screen. */
     val wantsOutsideTaps: Boolean get() = expanded || showAgentResult || (agentPanel && agent.running)
-    val hasContent: Boolean get() = showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
+    val hasContent: Boolean get() = (notch && !landscape) || showFace || showUnlock || agent.running || showAgentResult || alwaysOn || media != null || activity != null || showChargeBloom || showEvent || showPeek || showAi
 }
 
 /** Battery broadcasts as flows. */
@@ -163,6 +180,8 @@ class IslandService : Service() {
     private var btReceiver: BroadcastReceiver? = null
     private var collapseJob: Job? = null
     private var showing = false
+    /** The island is in Prism's accessibility service's window, in the notch (see [IslandState.notch]). */
+    private var inNotch = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -202,6 +221,9 @@ class IslandService : Service() {
             }
         }
         scope.launch { PrismNotificationListener.peek.collect { peeks.value = it to SystemClock.elapsedRealtime() } }
+        state.value = state.value.copy(landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
+        // With Prism's accessibility switch on, the island moves into the notch (above the status bar).
+        scope.launch { AgentAccessibilityService.connected.collect { on -> rehost(on && AgentAccessibilityService.instance != null) } }
         // Unlocked (face, fingerprint or PIN): play the Face-ID-style unlock on the island. Apps can't
         // draw over the lock screen itself, so this is the first moment the island is visible again.
         unlockReceiver = object : BroadcastReceiver() {
@@ -250,6 +272,8 @@ class IslandService : Service() {
                     chargedAt = if (s.islandShowCharging) at else 0L,
                     pillWidthDp = cutoutWidthDp() + s.islandExtraWidthDp,
                     pillHeightDp = cutoutHeightDp() + s.islandExtraHeightDp,
+                    cutWidthDp = cutoutWidthDp(),
+                    cutHeightDp = cutoutHeightDp(),
                     style = s.islandStyle,
                     alwaysOn = s.islandShowAssistant,
                     split = s.islandSplit,
@@ -270,6 +294,8 @@ class IslandService : Service() {
                     unlockAt = state.value.unlockAt,
                     face = state.value.face,
                     faceAt = state.value.faceAt,
+                    notch = inNotch,
+                    landscape = state.value.landscape,
                 )
                 if (offsetChanged && showing) { host?.update(params(state.value.wantsOutsideTaps)); watchingOutside = state.value.wantsOutsideTaps }
                 sync()
@@ -286,6 +312,66 @@ class IslandService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "stop") { stopSelf(); return START_NOT_STICKY }
         return START_STICKY
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Turned sideways the notch is on the side: the idle tab steps away (things with content stay).
+        state.value = state.value.copy(landscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
+        sync()
+    }
+
+    /** Moves the island between the notch (accessibility overlay, above the status bar) and the old floating pill. */
+    private fun rehost(notch: Boolean) {
+        if (notch == inNotch && host != null) return
+        if (showing) hide()
+        host?.destroy()
+        val svc = if (notch) AgentAccessibilityService.instance else null
+        inNotch = svc != null
+        host = if (svc != null) OverlayHost(svc, accessibility = true) else OverlayHost(this)
+        if (!inNotch) reportBounds(null)
+        state.value = state.value.copy(notch = inNotch)
+        sync()
+    }
+
+    /** Four taps within 1.5 s anywhere on the island knock on Morse's secret door (hidden apps, face first). */
+    private val taps = ArrayDeque<Long>()
+
+    private fun tapped() {
+        val now = SystemClock.uptimeMillis()
+        taps.addLast(now)
+        while (taps.isNotEmpty() && now - taps.first() > 1_500) taps.removeFirst()
+        if (taps.size < 4) return
+        taps.clear()
+        if (state.value.expanded) setExpanded(false)
+        runCatching {
+            startActivity(Intent(MORSE_SECRET_DOOR).setPackage(MORSE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    /**
+     * Where the island's window is, sent to Morse so its Nothing bar strips (also over the status bar) leave room
+     * around it — at most every 120 ms while the island animates, and once more when it settles.
+     */
+    private var boundsJob: Job? = null
+    private var sentBounds = IntArray(3)
+
+    private fun reportBounds(view: android.view.View?) {
+        boundsJob?.cancel()
+        boundsJob = scope.launch {
+            delay(120)
+            val b = IntArray(3)
+            if (view != null && view.isAttachedToWindow && inNotch) {
+                val at = IntArray(2)
+                view.getLocationOnScreen(at)
+                b[0] = at[0]; b[1] = at[0] + view.width; b[2] = at[1] + view.height
+            }
+            if (b.contentEquals(sentBounds)) return@launch
+            sentBounds = b
+            runCatching {
+                sendBroadcast(Intent(ACTION_ISLAND_BOUNDS).setPackage(MORSE).putExtra("left", b[0]).putExtra("right", b[1]).putExtra("bottom", b[2]))
+            }
+        }
     }
 
     private fun sync() {
@@ -329,8 +415,12 @@ class IslandService : Service() {
     private fun cutoutHeightDp(): Float = (cutout()?.height() ?: 80) / resources.displayMetrics.density
 
     private fun params(expanded: Boolean): WindowManager.LayoutParams = OverlayHost.params(
-        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL, focusable = false, y = offsetPx,
+        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL, focusable = false,
+        // In the notch the tab hangs from the very top edge; the pill keeps the person's "move down".
+        y = if (inNotch) 0 else offsetPx,
+        type = if (inNotch) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
     ).apply {
+        if (inNotch) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         if (expanded) flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
     }
 
@@ -344,6 +434,7 @@ class IslandService : Service() {
                 CompositionLocalProvider(LocalTilt provides tilt) {
                     IslandUi(
                         state = st,
+                        onTap = { tapped() },
                         onToggleExpand = { setExpanded(!st.expanded) },
                         onAssistant = { openAssistant() },
                         onActivityTap = { a -> runCatching { a.contentIntent?.send() } },
@@ -355,6 +446,10 @@ class IslandService : Service() {
                     )
                 }
             }
+        }
+        h.view?.let { v ->
+            v.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ -> reportBounds(view) }
+            reportBounds(v)
         }
         h.view?.setOnTouchListener { _, ev ->
             if (ev.action == MotionEvent.ACTION_OUTSIDE) {
@@ -406,6 +501,7 @@ class IslandService : Service() {
     private fun hide() {
         showing = false
         host?.hide()
+        reportBounds(null)
     }
 
     private fun openAssistant() {

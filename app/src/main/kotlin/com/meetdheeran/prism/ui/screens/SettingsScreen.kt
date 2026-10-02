@@ -260,7 +260,11 @@ fun SettingsScreen(nav: NavController) {
             SettingRow("Edit tiles", subtitle = "Choose and reorder controls", chevron = true) { nav.navigate(Routes.TILES) }
         }
 
-        GlassGroup(backdrop, "Dynamic Island", footer = "A pill around the camera notch for music and live activities. Needs 'Display over other apps' and, for music, notification access.") {
+        GlassGroup(
+            backdrop, "Dynamic Island",
+            footer = if (agentConnected) "In the notch: a black tab growing out of the top edge around the camera, above the status bar, so tapping it never pulls the notification bar down. Hold it to talk; tap it 4 times for Morse's secret door."
+            else "A pill around the camera notch for music and live activities. Switch on Prism's phone agent in Accessibility and it moves into the notch itself, above the status bar. Needs 'Display over other apps' and, for music, notification access.",
+        ) {
             SwitchRow("Enable island", checked = settings.islandEnabled) { on ->
                 if (on && !OverlayHost.canDrawOverlays(ctx)) { nav.navigate(Routes.PERMISSIONS); return@SwitchRow }
                 update { it.copy(islandEnabled = on) }
@@ -286,12 +290,15 @@ fun SettingsScreen(nav: NavController) {
             SwitchRow("Calls", checked = settings.islandShowCalls, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowCalls = on) } }
             GlassDivider()
             SwitchRow("Timers & navigation", checked = settings.islandShowTimers, enabled = settings.islandEnabled) { on -> update { it.copy(islandShowTimers = on) } }
-            GlassDivider()
-            TuneRow("Move down", settings.islandOffsetDp, -12, 24) { v -> update { it.copy(islandOffsetDp = v) } }
-            GlassDivider()
-            TuneRow("Wider", settings.islandExtraWidthDp, -20, 60) { v -> update { it.copy(islandExtraWidthDp = v) } }
-            GlassDivider()
-            TuneRow("Taller", settings.islandExtraHeightDp, -10, 24) { v -> update { it.copy(islandExtraHeightDp = v) } }
+            // The tab fits the cutout itself; fine-tuning is only for the floating pill.
+            if (!agentConnected) {
+                GlassDivider()
+                TuneRow("Move down", settings.islandOffsetDp, -12, 24) { v -> update { it.copy(islandOffsetDp = v) } }
+                GlassDivider()
+                TuneRow("Wider", settings.islandExtraWidthDp, -20, 60) { v -> update { it.copy(islandExtraWidthDp = v) } }
+                GlassDivider()
+                TuneRow("Taller", settings.islandExtraHeightDp, -10, 24) { v -> update { it.copy(islandExtraHeightDp = v) } }
+            }
         }
 
         GlassGroup(backdrop, "Always-on display", footer = "Shows whenever the screen turns off: clock, date, notifications, music and battery. Android can't draw on a truly off screen, so this keeps the screen on at very low brightness and shifts pixels every minute to protect the OLED.") {

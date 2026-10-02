@@ -18,6 +18,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,7 +115,7 @@ import com.meetdheeran.prism.ui.siri.Phase
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
+fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}) {
     val backdrop = rememberBackdropState()
     val mode = when {
         state.agent.confirm != null -> Mode.AGENT_CONFIRM
@@ -133,8 +134,10 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
         state.media != null -> Mode.MEDIA
         else -> Mode.EMPTY
     }
-    val base = state.pillWidthDp.dp
-    val baseH = state.pillHeightDp.dp
+    // In the notch: a tab exactly over the camera cutout (the pill's fine-tune doesn't apply); otherwise the pill.
+    val tab = state.notch
+    val base = if (tab) state.cutWidthDp.dp else state.pillWidthDp.dp
+    val baseH = if (tab) (state.cutHeightDp + 1f).dp else state.pillHeightDp.dp
     val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
     val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
     val targetH = when (mode) {
@@ -149,10 +152,12 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
     val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT
-    val shape = RoundedCornerShape(when { big -> 34.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 })
+    val corner = when { big -> 34.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }
+    // The tab is flush with the screen's top edge: square on top, rounded below.
+    val shape = if (tab) RoundedCornerShape(0.dp, 0.dp, corner, corner) else RoundedCornerShape(corner)
 
     // The Nothing look has no glass: its island is always a plain black pill.
-    val lensMode = state.style == IslandStyle.LENS && !Appearance.nothing
+    val lensMode = state.style == IslandStyle.LENS && !Appearance.nothing && !tab
     val lensRegistry = remember { LensRegistry() }
     val radiusPx = with(LocalDensity.current) { (if (big) 34.dp else baseH / 2).toPx() }
     val fallback = remember(state.media?.art) { lensFallback(state.media?.art) }
@@ -179,12 +184,34 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
     val side = if (splitting) bubble + gap + 6.dp else 0.dp
     val density = LocalDensity.current
 
-    Box(Modifier.padding(bottom = 8.dp, start = 8.dp, end = 8.dp).width(w + side * 2).height(h)) {
+    // The tab's shoulders: little inward curves where it meets the top edge, like a real notch.
+    val shoulder = if (tab) 6.dp else 0.dp
+    val outer = if (tab) Modifier.padding(start = shoulder, end = shoulder, bottom = 2.dp) else Modifier.padding(bottom = 8.dp, start = 8.dp, end = 8.dp)
+    Box(outer.width(w + side * 2).height(h)) {
+        if (tab) {
+            Canvas(Modifier.matchParentSize()) {
+                val s = shoulder.toPx()
+                val l = side.toPx()
+                val r = l + w.toPx()
+                drawPath(androidx.compose.ui.graphics.Path().apply {
+                    moveTo(l - s, 0f); lineTo(l + 1f, 0f); lineTo(l + 1f, s)
+                    arcTo(androidx.compose.ui.geometry.Rect(l - 2 * s, 0f, l, 2 * s), 0f, -90f, false)
+                    close()
+                }, Color.Black)
+                drawPath(androidx.compose.ui.graphics.Path().apply {
+                    moveTo(r + s, 0f); lineTo(r - 1f, 0f); lineTo(r - 1f, s)
+                    arcTo(androidx.compose.ui.geometry.Rect(r, 0f, r + 2 * s, 2 * s), 180f, 90f, false)
+                    close()
+                }, Color.Black)
+            }
+        }
         if (splitting) {
             val gooey = remember(density) { gooeyEffect(with(density) { 7.dp.toPx() }) }
             Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = gooey }) {
                 val left = side.toPx()
-                drawRoundRect(Color.Black, Offset(left, 0f), Size(w.toPx(), h.toPx()), CornerRadius(h.toPx() / 2))
+                // The tab's top corners go above the screen edge, so it stays flush with the top.
+                if (tab) drawRoundRect(Color.Black, Offset(left, -h.toPx() / 2), Size(w.toPx(), h.toPx() * 1.5f), CornerRadius(h.toPx() / 2))
+                else drawRoundRect(Color.Black, Offset(left, 0f), Size(w.toPx(), h.toPx()), CornerRadius(h.toPx() / 2))
                 val r = bubble.toPx() / 2 * (0.55f + 0.45f * split.coerceIn(0f, 1.2f))
                 // From tucked inside the pill's right end out to its resting spot, overshooting on the spring.
                 val cx = left + w.toPx() - bubble.toPx() / 2 + (bubble + gap).toPx() * split
@@ -192,7 +219,7 @@ fun IslandUi(state: IslandState, onToggleExpand: () -> Unit, onAssistant: () -> 
             }
         }
         Box(Modifier.offset(x = side)) {
-            PillBody(state, mode, w, h, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+            PillBody(state, mode, w, h, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
         }
         if (splitting) {
             val sec = secondary ?: lastSecondary.value
@@ -257,7 +284,7 @@ private fun PillBody(
     state: IslandState, mode: Mode, w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
-    onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
+    onTap: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
     onAgentStop: () -> Unit, onAgentAnswer: (Boolean) -> Unit, onAgentTap: () -> Unit, onAgentResultTap: () -> Unit,
 ) {
     Box {
@@ -284,10 +311,20 @@ private fun PillBody(
         Box(
             Modifier
                 .size(w, h)
-                .then(if (bare) Modifier else Modifier.liquidGlass(backdrop, shape, if (lensMode) GlassStyle.Island.copy(backdropless = true, tintAlpha = 0f, highlightAlpha = 0.10f, rimAlpha = 0.85f, innerShadowAlpha = 0f, elevation = 6.dp) else GlassStyle.Island, LocalTilt.current))
+                // The tab is plain black, to be one with the camera cutout.
+                .then(if (bare || state.notch) Modifier else Modifier.liquidGlass(backdrop, shape, if (lensMode) GlassStyle.Island.copy(backdropless = true, tintAlpha = 0f, highlightAlpha = 0.10f, rimAlpha = 0.85f, innerShadowAlpha = 0f, elevation = 6.dp) else GlassStyle.Island, LocalTilt.current))
+                .pointerInput(mode) {
+                    // Swiping down on the island opens it (music), and never reaches the status bar under it.
+                    var pulled = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { pulled = 0f },
+                        onDragEnd = { if (pulled > 36.dp.toPx() && state.media != null && !state.expanded) onToggleExpand() },
+                    ) { change, dy -> change.consume(); pulled += dy }
+                }
                 .pointerInput(mode) {
                     detectTapGestures(
                         onTap = {
+                            onTap()
                             when {
                                 // Tapping the island while the agent works stops it.
                                 // Tap while it works opens the step panel (with Stop); it no longer stops outright.
@@ -296,6 +333,8 @@ private fun PillBody(
                                 mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.UNLOCK || mode == Mode.FACE -> Unit
                                 mode == Mode.CALL || mode == Mode.ACTIVITY -> state.activity?.let(onActivityTap)
                                 mode == Mode.PEEK -> state.peek?.let(onPeekTap)
+                                // The tab is always in the notch, so a stray tap mustn't open anything; hold talks.
+                                mode == Mode.EMPTY && state.notch -> Unit
                                 mode == Mode.EMPTY || mode == Mode.AI -> onAssistant()
                                 state.media != null -> onToggleExpand()
                             }

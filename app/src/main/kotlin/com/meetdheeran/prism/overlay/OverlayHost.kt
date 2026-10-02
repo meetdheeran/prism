@@ -24,12 +24,14 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.meetdheeran.prism.R
 
 /**
- * Hosts Jetpack Compose inside a WindowManager overlay window (TYPE_APPLICATION_OVERLAY).
- * Compose needs the three ViewTree owners that an Activity normally provides; a Service has
- * none, so this object is all three. One host per overlay window.
+ * Hosts Jetpack Compose inside a WindowManager overlay window (TYPE_APPLICATION_OVERLAY), or — given Prism's
+ * accessibility service as [context] with [accessibility] — an accessibility overlay, which Android keeps above the
+ * status bar. Compose needs the three ViewTree owners that an Activity normally provides; a Service has none, so this
+ * object is all three. One host per overlay window.
  */
-class OverlayHost(context: Context) : LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
-    private val ctx = ContextThemeWrapper(context.applicationContext, R.style.Theme_Prism)
+class OverlayHost(context: Context, accessibility: Boolean = false) : LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
+    // An accessibility overlay has to be added through that service's own context (its window token).
+    private val ctx = ContextThemeWrapper(if (accessibility) context else context.applicationContext, R.style.Theme_Prism)
     private val wm = ctx.getSystemService(WindowManager::class.java)
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateController = SavedStateRegistryController.create(this)
@@ -102,6 +104,7 @@ class OverlayHost(context: Context) : LifecycleOwner, SavedStateRegistryOwner, V
             touchable: Boolean = true,
             x: Int = 0,
             y: Int = 0,
+            type: Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
         ): WindowManager.LayoutParams {
             var flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -111,7 +114,7 @@ class OverlayHost(context: Context) : LifecycleOwner, SavedStateRegistryOwner, V
             if (!touchable) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             return WindowManager.LayoutParams(
                 width, height,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                type,
                 flags,
                 PixelFormat.TRANSLUCENT,
             ).apply {
