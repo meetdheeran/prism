@@ -60,6 +60,7 @@ const val ACTION_FACE = "com.meetdheeran.prism.ISLAND_FACE"
 
 /** Where the island is (left, right, bottom in px; all 0 when it isn't over the status bar), sent to Morse. */
 const val ACTION_ISLAND_BOUNDS = "com.meetdheeran.prism.ISLAND_BOUNDS"
+const val ACTION_ISLAND_BOUNDS_ASK = "com.meetdheeran.prism.ISLAND_BOUNDS_ASK"
 
 private const val MORSE = "com.meetdheeran.morse"
 private const val MORSE_KNOCK_TAP = "com.meetdheeran.morse.KNOCK_TAP"
@@ -174,6 +175,7 @@ class IslandService : Service() {
     private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var unlockReceiver: BroadcastReceiver? = null
     private var faceReceiver: BroadcastReceiver? = null
+    private var boundsAsk: BroadcastReceiver? = null
     private var panelJob: Job? = null
     /** Whether the window currently asks for taps outside it (only while a closable card is up). */
     private var watchingOutside = false
@@ -257,6 +259,14 @@ class IslandService : Service() {
             }
         }
         ContextCompat.registerReceiver(this, faceReceiver!!, IntentFilter(ACTION_FACE), ContextCompat.RECEIVER_EXPORTED)
+        // Morse asks where the island is when it starts (it may have missed the last report).
+        boundsAsk = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                sentBounds = IntArray(3)
+                reportBounds(if (showing) host?.view else null)
+            }
+        }
+        ContextCompat.registerReceiver(this, boundsAsk!!, IntentFilter(ACTION_ISLAND_BOUNDS_ASK), ContextCompat.RECEIVER_EXPORTED)
         ContextCompat.registerReceiver(this, btReceiver!!, IntentFilter(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED), ContextCompat.RECEIVER_EXPORTED)
         scope.launch {
             combine(graph.prefs.settings, MediaWatcher.now, PrismNotificationListener.activities, ch.info, ch.connectedAt) { s: Settings, np, acts, bat, at ->
@@ -510,6 +520,7 @@ class IslandService : Service() {
         btReceiver?.let { runCatching { unregisterReceiver(it) } }
         unlockReceiver?.let { runCatching { unregisterReceiver(it) } }
         faceReceiver?.let { runCatching { unregisterReceiver(it) } }
+        boundsAsk?.let { runCatching { unregisterReceiver(it) } }
         scope.cancel()
         BackgroundNotice.stop(this)
         super.onDestroy()

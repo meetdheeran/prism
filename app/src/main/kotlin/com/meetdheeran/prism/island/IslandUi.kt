@@ -52,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -193,67 +194,78 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
     // The tab's shoulders: little inward curves where it meets the top edge, like a real notch.
     val shoulder = if (tab) 6.dp else 0.dp
     val outer = if (tab) Modifier.padding(start = shoulder, end = shoulder, bottom = 2.dp) else Modifier.padding(bottom = 8.dp, start = 8.dp, end = 8.dp)
-    Box(outer.width(w + side * 2).height(h)) {
-        if (tab) {
-            Canvas(Modifier.matchParentSize()) {
-                val s = shoulder.toPx()
-                val l = side.toPx()
-                val r = l + w.toPx()
-                drawPath(androidx.compose.ui.graphics.Path().apply {
-                    moveTo(l - s, 0f); lineTo(l + 1f, 0f); lineTo(l + 1f, s)
-                    arcTo(androidx.compose.ui.geometry.Rect(l - 2 * s, 0f, l, 2 * s), 0f, -90f, false)
-                    close()
-                }, Color.Black)
-                drawPath(androidx.compose.ui.graphics.Path().apply {
-                    moveTo(r + s, 0f); lineTo(r - 1f, 0f); lineTo(r - 1f, s)
-                    arcTo(androidx.compose.ui.geometry.Rect(r, 0f, r + 2 * s, 2 * s), 180f, 90f, false)
-                    close()
-                }, Color.Black)
+    // The notch is small and mostly camera: around the tab an invisible margin catches taps too (they count towards
+    // Morse's secret door), so a tap near the notch never lands on what's under it.
+    val tapNow by rememberUpdatedState(onTap)
+    val holdNow by rememberUpdatedState(onAssistant)
+    val hitArea = if (tab) {
+        Modifier
+            .pointerInput(Unit) { detectTapGestures(onTap = { tapNow() }, onLongPress = { holdNow() }) }
+            .padding(start = 24.dp, end = 24.dp, bottom = 10.dp)
+    } else Modifier
+    Box(hitArea) {
+        Box(outer.width(w + side * 2).height(h)) {
+            if (tab) {
+                Canvas(Modifier.matchParentSize()) {
+                    val s = shoulder.toPx()
+                    val l = side.toPx()
+                    val r = l + w.toPx()
+                    drawPath(androidx.compose.ui.graphics.Path().apply {
+                        moveTo(l - s, 0f); lineTo(l + 1f, 0f); lineTo(l + 1f, s)
+                        arcTo(androidx.compose.ui.geometry.Rect(l - 2 * s, 0f, l, 2 * s), 0f, -90f, false)
+                        close()
+                    }, Color.Black)
+                    drawPath(androidx.compose.ui.graphics.Path().apply {
+                        moveTo(r + s, 0f); lineTo(r - 1f, 0f); lineTo(r - 1f, s)
+                        arcTo(androidx.compose.ui.geometry.Rect(r, 0f, r + 2 * s, 2 * s), 180f, 90f, false)
+                        close()
+                    }, Color.Black)
+                }
             }
-        }
-        if (splitting) {
-            val gooey = remember(density) { gooeyEffect(with(density) { 7.dp.toPx() }) }
-            Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = gooey }) {
-                val left = side.toPx()
-                // The tab's top corners go above the screen edge, so it stays flush with the top.
-                if (tab) drawRoundRect(Color.Black, Offset(left, -h.toPx() / 2), Size(w.toPx(), h.toPx() * 1.5f), CornerRadius(h.toPx() / 2))
-                else drawRoundRect(Color.Black, Offset(left, 0f), Size(w.toPx(), h.toPx()), CornerRadius(h.toPx() / 2))
-                val r = bubble.toPx() / 2 * (0.55f + 0.45f * split.coerceIn(0f, 1.2f))
-                // From tucked inside the pill's right end out to its resting spot, overshooting on the spring.
-                val cx = left + w.toPx() - bubble.toPx() / 2 + (bubble + gap).toPx() * split
-                drawCircle(Color.Black, r, Offset(cx, bubbleY.toPx()))
+            if (splitting) {
+                val gooey = remember(density) { gooeyEffect(with(density) { 7.dp.toPx() }) }
+                Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = gooey }) {
+                    val left = side.toPx()
+                    // The tab's top corners go above the screen edge, so it stays flush with the top.
+                    if (tab) drawRoundRect(Color.Black, Offset(left, -h.toPx() / 2), Size(w.toPx(), h.toPx() * 1.5f), CornerRadius(h.toPx() / 2))
+                    else drawRoundRect(Color.Black, Offset(left, 0f), Size(w.toPx(), h.toPx()), CornerRadius(h.toPx() / 2))
+                    val r = bubble.toPx() / 2 * (0.55f + 0.45f * split.coerceIn(0f, 1.2f))
+                    // From tucked inside the pill's right end out to its resting spot, overshooting on the spring.
+                    val cx = left + w.toPx() - bubble.toPx() / 2 + (bubble + gap).toPx() * split
+                    drawCircle(Color.Black, r, Offset(cx, bubbleY.toPx()))
+                }
             }
-        }
-        Box(Modifier.offset(x = side)) {
-            PillBody(state, mode, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
-        }
-        if (splitting) {
-            val sec = secondary ?: lastSecondary.value
-            val x = side + w - bubble + (bubble + gap) * split
-            Box(
-                Modifier
-                    .offset(x = x, y = bubbleY - bubble / 2)
-                    .size(bubble)
-                    .graphicsLayer {
-                        alpha = ((split - 0.55f) / 0.45f).coerceIn(0f, 1f)
-                        val sc = 0.8f + 0.2f * split.coerceAtMost(1f)
-                        scaleX = sc; scaleY = sc
+            Box(Modifier.offset(x = side)) {
+                PillBody(state, mode, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+            }
+            if (splitting) {
+                val sec = secondary ?: lastSecondary.value
+                val x = side + w - bubble + (bubble + gap) * split
+                Box(
+                    Modifier
+                        .offset(x = x, y = bubbleY - bubble / 2)
+                        .size(bubble)
+                        .graphicsLayer {
+                            alpha = ((split - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                            val sc = 0.8f + 0.2f * split.coerceAtMost(1f)
+                            scaleX = sc; scaleY = sc
+                        }
+                        .pointerInput(sec) {
+                            detectTapGestures(
+                                onTap = { if (sec == Second.MEDIA) onToggleExpand() else state.activity?.let(onActivityTap) },
+                                onLongPress = { onAssistant() },
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (sec) {
+                        Second.MEDIA -> state.media?.let { np -> if (np.art != null && !Appearance.nothing) Art(np, bubble - 12.dp, CircleShape) else AudioBars(np.isPlaying) }
+                        Second.TIMER -> state.activity?.let { a ->
+                            if (a.chronometerBase > 0) MiniChrono(a.chronometerBase, a.countDown)
+                            else Icon(Icons.Rounded.HourglassBottom, null, tint = Ink.warm, modifier = Modifier.size(14.dp))
+                        }
+                        null -> Unit
                     }
-                    .pointerInput(sec) {
-                        detectTapGestures(
-                            onTap = { if (sec == Second.MEDIA) onToggleExpand() else state.activity?.let(onActivityTap) },
-                            onLongPress = { onAssistant() },
-                        )
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                when (sec) {
-                    Second.MEDIA -> state.media?.let { np -> if (np.art != null && !Appearance.nothing) Art(np, bubble - 12.dp, CircleShape) else AudioBars(np.isPlaying) }
-                    Second.TIMER -> state.activity?.let { a ->
-                        if (a.chronometerBase > 0) MiniChrono(a.chronometerBase, a.countDown)
-                        else Icon(Icons.Rounded.HourglassBottom, null, tint = Ink.warm, modifier = Modifier.size(14.dp))
-                    }
-                    null -> Unit
                 }
             }
         }
