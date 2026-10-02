@@ -140,13 +140,17 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
     val baseH = if (tab) (state.cutHeightDp + 1f).dp else state.pillHeightDp.dp
     val targetW = when (mode) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED, Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp }
     val resultLines = state.agent.result.orEmpty().let { r -> r.lines().sumOf { 1 + it.length / 34 } }.coerceIn(1, 9)
+    // In the notch the camera sits in the middle of the tab's top: whatever has words (or a glyph) is shown under it,
+    // the tab growing down out of the notch; music keeps art and bars either side of the camera, iPhone-style.
+    val cam = if (tab) state.cutHeightDp.dp else 0.dp
+    val below = tab && mode != Mode.EMPTY && mode != Mode.MEDIA
     val targetH = when (mode) {
-        Mode.EXPANDED -> 156.dp
-        Mode.AGENT_CONFIRM -> 158.dp
-        Mode.AGENT_PANEL -> 176.dp
-        Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines
-        Mode.UNLOCK, Mode.FACE -> baseH + 34.dp
-        else -> baseH
+        Mode.EXPANDED -> 156.dp + cam
+        Mode.AGENT_CONFIRM -> 158.dp + cam
+        Mode.AGENT_PANEL -> 176.dp + cam
+        Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines + cam
+        Mode.UNLOCK, Mode.FACE -> if (tab) cam + 52.dp else baseH + 34.dp
+        else -> if (below) cam + 30.dp else baseH
     }
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
@@ -182,6 +186,8 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
     val gap = 8.dp
     // Equal room on both sides keeps the pill centred on the camera while the bubble sits right.
     val side = if (splitting) bubble + gap + 6.dp else 0.dp
+    // The bubble's middle: level with the row it belongs beside.
+    val bubbleY = if (below) cam + (h - cam) / 2 else h / 2
     val density = LocalDensity.current
 
     // The tab's shoulders: little inward curves where it meets the top edge, like a real notch.
@@ -215,18 +221,18 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onToggleExpand: () -> U
                 val r = bubble.toPx() / 2 * (0.55f + 0.45f * split.coerceIn(0f, 1.2f))
                 // From tucked inside the pill's right end out to its resting spot, overshooting on the spring.
                 val cx = left + w.toPx() - bubble.toPx() / 2 + (bubble + gap).toPx() * split
-                drawCircle(Color.Black, r, Offset(cx, h.toPx() / 2))
+                drawCircle(Color.Black, r, Offset(cx, bubbleY.toPx()))
             }
         }
         Box(Modifier.offset(x = side)) {
-            PillBody(state, mode, w, h, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+            PillBody(state, mode, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
         }
         if (splitting) {
             val sec = secondary ?: lastSecondary.value
             val x = side + w - bubble + (bubble + gap) * split
             Box(
                 Modifier
-                    .offset(x = x)
+                    .offset(x = x, y = bubbleY - bubble / 2)
                     .size(bubble)
                     .graphicsLayer {
                         alpha = ((split - 0.55f) / 0.45f).coerceIn(0f, 1f)
@@ -282,6 +288,7 @@ private fun MiniChrono(baseWallMs: Long, countDown: Boolean) {
 @Composable
 private fun PillBody(
     state: IslandState, mode: Mode, w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
+    contentTop: androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
     onTap: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
@@ -344,7 +351,7 @@ private fun PillBody(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            AnimatedContent(mode, transitionSpec = { fadeIn(Motion.fade(200)) togetherWith fadeOut(Motion.fade(120)) }, label = "island") { m ->
+            AnimatedContent(mode, Modifier.fillMaxSize().padding(top = contentTop), transitionSpec = { fadeIn(Motion.fade(200)) togetherWith fadeOut(Motion.fade(120)) }, label = "island") { m ->
                 when (m) {
                     Mode.EMPTY -> Box(Modifier.fillMaxSize())
                     Mode.MEDIA -> state.media?.let { Collapsed(it) }
