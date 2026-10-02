@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -175,10 +176,10 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     fun under(m: Mode) = tab && !(m == Mode.EMPTY || m == Mode.MEDIA || m == Mode.CALL || m == Mode.ACTIVITY || m == Mode.PROGRESS || m == Mode.CHARGE_LIVE)
     /** How big the island is when it shows [m]; each look is also laid out at this size (see [PillBody]). */
     fun sizeOf(m: Mode) = DpSize(
-        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 312.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
+        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 360.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
         when (m) {
             Mode.ASK -> cam + (if (askLines == 0) 46.dp else 64.dp + 20.dp * askLines)
-            Mode.EXPANDED -> 138.dp + cam
+            Mode.EXPANDED -> 86.dp + cam
             Mode.AGENT_CONFIRM -> 158.dp + cam
             Mode.AGENT_PANEL -> 176.dp + cam
             Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines + cam
@@ -259,7 +260,9 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
             .padding(start = 24.dp, end = 24.dp, bottom = 10.dp)
     } else Modifier
     Box(hitArea) {
-        Box(outer.width(spanW + side * 2).height(spanH)) {
+        // In the notch's screen-wide window a wide card plus the touch margins can be wider than the screen: the island
+        // keeps its size (centred) rather than being squeezed.
+        Box(outer.then(if (tab) Modifier.requiredSize(spanW + side * 2, spanH) else Modifier.width(spanW + side * 2).height(spanH))) {
             if (tab) {
                 Canvas(Modifier.matchParentSize()) {
                     val s = shoulder.toPx()
@@ -905,34 +908,32 @@ private fun Expanded(np: NowPlaying) {
     var tick by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(np.isPlaying) { while (true) { delay(500); tick = SystemClock.elapsedRealtime() } }
     val pos = np.livePosition(tick)
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    val frac = if (np.durationMs > 0) (pos.toFloat() / np.durationMs).coerceIn(0f, 1f) else 0f
+    // Wide and short: the song and its buttons on one row, where it's at on the next.
+    Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Art(np, 46.dp, RoundedCornerShape(11.dp))
-            Spacer(Modifier.width(11.dp))
+            Art(np, 44.dp, RoundedCornerShape(10.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(np.title, style = PrismTypography.titleSmall, color = Color.White, maxLines = 1, modifier = Modifier.basicMarquee())
                 Text(np.artist, style = PrismTypography.bodySmall, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.width(8.dp))
-            AudioBars(np.isPlaying)
-        }
-        Spacer(Modifier.height(9.dp))
-        val frac = if (np.durationMs > 0) (pos.toFloat() / np.durationMs).coerceIn(0f, 1f) else 0f
-        Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f))) {
-            Box(Modifier.fillMaxWidth(frac).height(4.dp).background(Color.White))
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 3.dp)) {
-            Text(fmt(pos), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
-            Spacer(Modifier.weight(1f))
-            Text("-" + fmt((np.durationMs - pos).coerceAtLeast(0)), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
+            Spacer(Modifier.width(6.dp))
+            Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(32.dp).pressable { MediaWatcher.previous() })
+            Spacer(Modifier.width(2.dp))
+            Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(38.dp).pressable { MediaWatcher.toggle() })
+            Spacer(Modifier.width(2.dp))
+            Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(32.dp).pressable { MediaWatcher.next() })
         }
         Spacer(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(30.dp).pressable { MediaWatcher.previous() })
-            Spacer(Modifier.width(24.dp))
-            Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(36.dp).pressable { MediaWatcher.toggle() })
-            Spacer(Modifier.width(24.dp))
-            Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(30.dp).pressable { MediaWatcher.next() })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(fmt(pos), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.weight(1f).height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f))) {
+                Box(Modifier.fillMaxWidth(frac).height(4.dp).background(Color.White))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("-" + fmt((np.durationMs - pos).coerceAtLeast(0)), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
         }
     }
 }
