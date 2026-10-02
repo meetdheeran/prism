@@ -179,6 +179,19 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
+    // The window keeps one size while the island animates (the biggest it will be), and only the black shape moves
+    // inside it: a window resized every frame lags, and Android stretches its old picture until the new one is drawn.
+    val hold = remember { floatArrayOf(0f, 0f) }
+    if (kotlin.math.abs(w.value - targetW.value) < 0.5f && kotlin.math.abs(h.value - targetH.value) < 0.5f) {
+        hold[0] = targetW.value
+        hold[1] = targetH.value
+    } else {
+        hold[0] = maxOf(hold[0], targetW.value, w.value)
+        hold[1] = maxOf(hold[1], targetH.value, h.value)
+    }
+    val spanW = hold[0].dp
+    val spanH = hold[1].dp
+    val dx = (spanW - w) / 2
     val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.ASK
     val corner = when { big -> 34.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }
     // The tab is flush with the screen's top edge: square on top, rounded below.
@@ -228,11 +241,11 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
             .padding(start = 24.dp, end = 24.dp, bottom = 10.dp)
     } else Modifier
     Box(hitArea) {
-        Box(outer.width(w + side * 2).height(h)) {
+        Box(outer.width(spanW + side * 2).height(spanH)) {
             if (tab) {
                 Canvas(Modifier.matchParentSize()) {
                     val s = shoulder.toPx()
-                    val l = side.toPx()
+                    val l = (side + dx).toPx()
                     val r = l + w.toPx()
                     drawPath(androidx.compose.ui.graphics.Path().apply {
                         moveTo(l - s, 0f); lineTo(l + 1f, 0f); lineTo(l + 1f, s)
@@ -249,7 +262,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
             if (splitting) {
                 val gooey = remember(density) { gooeyEffect(with(density) { 7.dp.toPx() }) }
                 Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = gooey }) {
-                    val left = side.toPx()
+                    val left = (side + dx).toPx()
                     // The tab's top corners go above the screen edge, so it stays flush with the top.
                     if (tab) drawRoundRect(Color.Black, Offset(left, -h.toPx() / 2), Size(w.toPx(), h.toPx() * 1.5f), CornerRadius(h.toPx() / 2))
                     else drawRoundRect(Color.Black, Offset(left, 0f), Size(w.toPx(), h.toPx()), CornerRadius(h.toPx() / 2))
@@ -261,12 +274,12 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                     }
                 }
             }
-            Box(Modifier.offset(x = side)) {
+            Box(Modifier.offset(x = side + dx)) {
                 PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, if (below) cam else 0.dp, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
             }
             if (splitting) {
                 shown.forEachIndexed { i, live ->
-                    val x = side + w - bubble + (bubble + gap) * (i + 1) * split
+                    val x = side + dx + w - bubble + (bubble + gap) * (i + 1) * split
                     Box(
                         Modifier
                             .offset(x = x, y = bubbleY - bubble / 2)
