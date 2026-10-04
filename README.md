@@ -4,7 +4,7 @@ A free, Siri-style assistant that gives you control of your phone and a new way 
 
 **Releases:** `v1.0` is the first complete build (assistant, control center, island, reminders, writing tools). `v2.0` adds the iOS-27 lens looks, the glass icon and Claude. `v3.0` adds the Nothing look, the always-on display, a free Gemini key setup and the split island.
 
-**New on `main` since v3.0:** the island moved into the notch. It can show several things at once, answers questions right there, and makes widgets for [Morse](https://github.com/meetdheeran/morse), a Nothing-style launcher.
+**New on `main` since v3.0:** the island moved into the notch. It can show several things at once, answers questions right there, and makes widgets for Morse, a Nothing-style launcher.
 
 - Chat with **Gemini**, **Groq** or **Claude** using your own key (stored in the Android Keystore, never shown again)
 - Voice in/out, conversation mode, phone actions via tools (apps, alarms, reminders, calendar, music, toggles)
@@ -23,18 +23,12 @@ Build: `.\gradlew.bat assembleDebug` → `app/build/outputs/apk/debug/app-debug.
 
 ## Screenshots
 
-Personal details (album art, other apps' content, notifications) are blurred.
+Taken on the OnePlus 7 with the current build, everything shown working.
 
-![The island in the notch: charging, then Morse's face check](docs/screenshots/09-island-notch.png)
-
-| Nothing look | Widget made from a description (in Morse) | Island as a floating pill |
+| Home (Nothing look) | Chat with Claude | Same chat, Glass look |
 |---|---|---|
-| ![](docs/screenshots/10-nothing-assistant.png) | ![](docs/screenshots/11-ai-widget.png) | ![](docs/screenshots/07-island-music.png) |
+| ![](docs/screenshots/01-home.png) | ![](docs/screenshots/02-chat.png) | ![](docs/screenshots/03-glass-look.png) |
 
-| Home | Chat with tools | Settings |
-|---|---|---|
-| ![](docs/screenshots/02-home.png) | ![](docs/screenshots/03-chat-groq-tools.png) | ![](docs/screenshots/04-settings.png) |
-
-| Writing tools | Reminders | Onboarding |
-|---|---|---|
-| ![](docs/screenshots/06-writing-tools.png) | ![](docs/screenshots/08-reminder.png) | ![](docs/screenshots/01-onboarding.png) |
+| Settings: look, signal colour, glyphs | The island in the notch (charging) |
+|---|---|
+| ![](docs/screenshots/04-settings.png) | ![](docs/screenshots/05-island-notch.png) |
