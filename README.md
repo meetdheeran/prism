@@ -4,7 +4,7 @@ A free, Siri-style assistant that gives you control of your phone and a new way 
 
 **Releases:** `v1.0` is the first complete build (assistant, control center, island, reminders, writing tools). `v2.0` adds the iOS-27 lens looks, the glass icon and Claude. `v3.0` adds the Nothing look, the always-on display, a free Gemini key setup and the split island.
 
-**New on `main` since v3.0:** the island moved into the notch. It can show several things at once, answers questions right there, and makes widgets for Morse, a Nothing-style launcher.
+**New on `main` since v3.0:** the island moved into the notch. It can show several things at once, answers questions right there, and makes widgets for [Morse](https://github.com/meetdheeran/morse), a Nothing-style launcher.
 
 - Chat with **Gemini**, **Groq** or **Claude** using your own key (stored in the Android Keystore, never shown again)
 - Voice in/out, conversation mode, phone actions via tools (apps, alarms, reminders, calendar, music, toggles)
