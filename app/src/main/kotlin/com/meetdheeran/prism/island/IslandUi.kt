@@ -2,6 +2,13 @@ package com.meetdheeran.prism.island
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import com.meetdheeran.prism.assistant.Haptics
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.TransformOrigin
@@ -191,7 +198,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val target = sizeOf(mode)
     val targetW = target.width
     val targetH = target.height
-    val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.72f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
+    val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.66f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
     val w by animateDpAsState(targetW, islandSpring, label = "w")
     val h by animateDpAsState(targetH, islandSpring, label = "h")
     // The island's touch area (in the notch its pad window, otherwise the window itself) keeps one size while the
@@ -212,6 +219,37 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val corner by animateDpAsState(when { big -> 32.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }, islandSpring, label = "corner")
     // The tab is flush with the screen's top edge: square on top, rounded below.
     val shape = if (tab) RoundedCornerShape(0.dp, 0.dp, corner, corner) else RoundedCornerShape(corner)
+    // The music card opening, 0 (small) → 1 (open), straight from the island's own height spring: its cover, text and
+    // buttons move with the shape, not on a clock of their own (see MusicMorph).
+    val shutH = sizeOf(Mode.MEDIA).height
+    val openH = sizeOf(Mode.EXPANDED).height
+    val open = if ((mode == Mode.MEDIA || mode == Mode.EXPANDED) && openH > shutH) (h - shutH) / (openH - shutH) else 0f
+
+    // Jelly touch: the island gives a little under the finger (from its top edge, where the tab hangs), wobbles back
+    // when the finger lets go, and ticks; a card opening or closing clicks.
+    val ctx = LocalContext.current
+    var pressed by remember { mutableStateOf(false) }
+    val squish by animateFloatAsState(
+        if (pressed) 0.95f else 1f,
+        if (pressed) spring(dampingRatio = 0.9f, stiffness = 1_000f) else spring(dampingRatio = 0.4f, stiffness = 500f),
+        label = "squish",
+    )
+    val pressWatch = Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            pressed = true
+            Haptics.tick(ctx)
+            do {
+                val e = awaitPointerEvent(PointerEventPass.Initial)
+            } while (e.changes.any { it.pressed })
+            pressed = false
+        }
+    }
+    val wasBig = remember { booleanArrayOf(big) }
+    LaunchedEffect(big) {
+        if (big != wasBig[0]) Haptics.click(ctx)
+        wasBig[0] = big
+    }
 
     // The Nothing look has no glass: its island is always a plain black pill.
     val lensMode = state.style == IslandStyle.LENS && !Appearance.nothing && !tab
@@ -259,10 +297,18 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
             .pointerInput(Unit) { detectTapGestures(onTap = { tapNow() }, onLongPress = { holdNow() }) }
             .padding(start = 24.dp, end = 24.dp, bottom = 10.dp)
     } else Modifier
-    Box(hitArea) {
+    Box(pressWatch.then(hitArea)) {
         // In the notch's screen-wide window a wide card plus the touch margins can be wider than the screen: the island
         // keeps its size (centred) rather than being squeezed.
-        Box(outer.then(if (tab) Modifier.requiredSize(spanW + side * 2, spanH) else Modifier.width(spanW + side * 2).height(spanH))) {
+        Box(
+            outer
+                .then(if (tab) Modifier.requiredSize(spanW + side * 2, spanH) else Modifier.width(spanW + side * 2).height(spanH))
+                .graphicsLayer {
+                    scaleX = squish
+                    scaleY = 1f - (1f - squish) * 1.4f
+                    transformOrigin = TransformOrigin(0.5f, if (tab) 0f else 0.5f)
+                },
+        ) {
             if (tab) {
                 Canvas(Modifier.matchParentSize()) {
                     val s = shoulder.toPx()
@@ -296,7 +342,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                 }
             }
             Box(Modifier.offset(x = side + dx)) {
-                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, open, cam, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
             }
             if (splitting) {
                 shown.forEachIndexed { i, live ->
@@ -384,7 +430,7 @@ private fun MiniChrono(baseWallMs: Long, countDown: Boolean) {
 private fun PillBody(
     state: IslandState, mode: Mode, act: LiveActivity?, currentKey: String?, keys: List<String>,
     w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
-    sizeOf: (Mode) -> DpSize, topOf: (Mode) -> androidx.compose.ui.unit.Dp,
+    sizeOf: (Mode) -> DpSize, topOf: (Mode) -> androidx.compose.ui.unit.Dp, open: Float, cam: androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
     onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onAskClose: () -> Unit, onAskMore: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
@@ -488,27 +534,29 @@ private fun PillBody(
         ) {
             // Each look is laid out at its own final size, hanging from the top, and the black shape reveals it as the
             // island grows (and clips it as it shrinks): nothing inside squeezes or reflows while the island animates.
+            // Music small and music open are one look (MusicMorph), so opening the card is one movement, not a crossfade.
             AnimatedContent(
-                mode, Modifier.fillMaxSize().clip(shape),
+                if (mode == Mode.EXPANDED) Mode.MEDIA else mode, Modifier.fillMaxSize().clip(shape),
                 transitionSpec = {
                     (fadeIn(Motion.fade(200)) + scaleIn(Motion.fade(320), initialScale = 0.92f, transformOrigin = TransformOrigin(0.5f, 0f))) togetherWith fadeOut(Motion.fade(120))
                 },
                 label = "island",
             ) { m ->
+                val music = m == Mode.MEDIA
                 Box(
-                    Modifier.fillMaxSize().wrapContentSize(Alignment.TopCenter, unbounded = true).size(sizeOf(m)).padding(top = topOf(m)),
+                    Modifier.fillMaxSize().wrapContentSize(Alignment.TopCenter, unbounded = true)
+                        .size(sizeOf(if (music) Mode.EXPANDED else m)).padding(top = if (music) 0.dp else topOf(m)),
                     contentAlignment = Alignment.Center,
                 ) {
                     when (m) {
                         Mode.EMPTY -> Box(Modifier.fillMaxSize())
-                        Mode.MEDIA -> state.media?.let { Collapsed(it) }
+                        Mode.MEDIA, Mode.EXPANDED -> state.media?.let { MusicMorph(it, open, sizeOf(Mode.MEDIA), cam) }
                         Mode.CHARGING -> Charging(state.battery)
                         Mode.EVENT -> state.event?.let { EventRow(it) }
                         Mode.CALL -> act?.let { if (state.notch) CallSplit(it, state.cutWidthDp.dp) else CallRow(it) }
                         Mode.ACTIVITY -> act?.let { if (state.notch) ActivitySplit(it, state.cutWidthDp.dp) else ActivityRow(it) }
                         Mode.PROGRESS -> act?.let { if (state.notch) ProgressSplit(it, state.cutWidthDp.dp) else ProgressRow(it) }
                         Mode.CHARGE_LIVE -> if (state.notch) ChargeSplit(state.battery, state.cutWidthDp.dp) else ChargeRow(state.battery)
-                        Mode.EXPANDED -> state.media?.let { Expanded(it) }
                         Mode.AI -> AiRow(state.ai, state.aiLevel)
                         Mode.AGENT -> AgentRow(state.agent)
                         Mode.AGENT_CONFIRM -> state.agent.confirm?.let { AgentConfirmCard(it, onAgentAnswer) }
@@ -781,30 +829,21 @@ private fun PeekRow(n: ShadeItem) {
 }
 
 @Composable
-private fun Collapsed(np: NowPlaying) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Art(np, 20.dp, CircleShape)
-        Spacer(Modifier.weight(1f))
-        AudioBars(playing = np.isPlaying)
-    }
-}
-
-@Composable
-private fun Art(np: NowPlaying, size: androidx.compose.ui.unit.Dp, shape: androidx.compose.ui.graphics.Shape) {
+private fun Art(np: NowPlaying, size: androidx.compose.ui.unit.Dp, shape: androidx.compose.ui.graphics.Shape, modifier: Modifier = Modifier) {
     val art = np.art
-    Box(Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+    Box(modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
         if (art != null) Image(art.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Icon(Icons.Rounded.MusicNote, null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
     }
 }
 
 @Composable
-private fun AudioBars(playing: Boolean, color: Color = Ink.cyan) {
+private fun AudioBars(playing: Boolean, color: Color = Ink.cyan, modifier: Modifier = Modifier) {
     val inf = rememberInfiniteTransition(label = "bars")
     val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "t")
     if (Appearance.nothing) {
         // Dot-matrix equaliser: four columns of four dots, lit from the bottom.
-        Canvas(Modifier.width(22.dp).height(16.dp)) {
+        Canvas(modifier.width(22.dp).height(16.dp)) {
             val cols = 4; val rows = 4
             val cw = size.width / cols; val rh = size.height / rows
             val r = minOf(cw, rh) * 0.32f
@@ -819,7 +858,7 @@ private fun AudioBars(playing: Boolean, color: Color = Ink.cyan) {
         }
         return
     }
-    Canvas(Modifier.width(22.dp).height(16.dp)) {
+    Canvas(modifier.width(22.dp).height(16.dp)) {
         val n = 4
         val gap = 2.dp.toPx()
         val bw = (size.width - gap * (n - 1)) / n
@@ -902,31 +941,77 @@ private fun Chrono(baseWallMs: Long, countDown: Boolean) {
     Text(if (a >= 3600) "%d:%02d:%02d".format(a / 3600, (a % 3600) / 60, a % 60) else "%d:%02d".format(a / 60, a % 60), style = PrismTypography.labelMedium, color = Ink.warm)
 }
 
+/**
+ * Music, small and open, as one piece — the iPhone's trick. [open] follows the island's own spring (0 small, 1 open)
+ * and every part travels with it: the cover grows from its spot beside the camera into the card (a 20 dp circle is a
+ * 10 dp-corner square, so the corner never jumps), the bars stay beside the camera, and the title, buttons and
+ * progress rise in as the card opens. Laid out at the open card's size; the island's shape shows what fits.
+ */
+@Composable
+private fun MusicMorph(np: NowPlaying, open: Float, small: DpSize, cam: androidx.compose.ui.unit.Dp) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val o = open.coerceIn(0f, 1f)
+        val left = (maxWidth - small.width) / 2
+        Art(
+            np, lerp(20.dp, 44.dp, o), RoundedCornerShape(10.dp),
+            Modifier.offset(lerp(left + 8.dp, 16.dp, o), lerp((small.height - 20.dp) / 2, cam + 6.dp, o)),
+        )
+        AudioBars(np.isPlaying, modifier = Modifier.offset(left + small.width - 30.dp, (small.height - 16.dp) / 2))
+        val reveal = ((open - 0.3f) / 0.5f).coerceIn(0f, 1f)
+        if (reveal > 0f) MusicCard(np, reveal, Modifier.padding(top = cam))
+    }
+}
+
+/** The open card's words, buttons and progress (the cover is MusicMorph's), coming in with [reveal]. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Expanded(np: NowPlaying) {
+private fun MusicCard(np: NowPlaying, reveal: Float, modifier: Modifier) {
     var tick by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(np.isPlaying) { while (true) { delay(500); tick = SystemClock.elapsedRealtime() } }
     val pos = np.livePosition(tick)
     val frac = if (np.durationMs > 0) (pos.toFloat() / np.durationMs).coerceIn(0f, 1f) else 0f
+    val keys = ((reveal - 0.15f) / 0.85f).coerceIn(0f, 1f)
+    val bar = ((reveal - 0.3f) / 0.7f).coerceIn(0f, 1f)
     // Wide and short: the song and its buttons on one row, where it's at on the next.
-    Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 12.dp)) {
+    Column(modifier.fillMaxSize().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Art(np, 44.dp, RoundedCornerShape(10.dp))
+            // The cover's place: it flies in on its own.
+            Spacer(Modifier.size(44.dp))
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+            Column(
+                Modifier.weight(1f).graphicsLayer {
+                    alpha = reveal
+                    translationX = (1f - reveal) * -14.dp.toPx()
+                },
+            ) {
                 Text(np.title, style = PrismTypography.titleSmall, color = Color.White, maxLines = 1, modifier = Modifier.basicMarquee())
                 Text(np.artist, style = PrismTypography.bodySmall, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(6.dp))
-            Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(32.dp).pressable { MediaWatcher.previous() })
-            Spacer(Modifier.width(2.dp))
-            Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(38.dp).pressable { MediaWatcher.toggle() })
-            Spacer(Modifier.width(2.dp))
-            Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(32.dp).pressable { MediaWatcher.next() })
+            Row(
+                Modifier.graphicsLayer {
+                    alpha = keys
+                    val sc = 0.8f + 0.2f * keys
+                    scaleX = sc
+                    scaleY = sc
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(32.dp).pressable { MediaWatcher.previous() })
+                Spacer(Modifier.width(2.dp))
+                Icon(if (np.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(38.dp).pressable { MediaWatcher.toggle() })
+                Spacer(Modifier.width(2.dp))
+                Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(32.dp).pressable { MediaWatcher.next() })
+            }
         }
         Spacer(Modifier.weight(1f))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.graphicsLayer {
+                alpha = bar
+                translationY = (1f - bar) * 8.dp.toPx()
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(fmt(pos), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
             Spacer(Modifier.width(8.dp))
             Box(Modifier.weight(1f).height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f))) {
