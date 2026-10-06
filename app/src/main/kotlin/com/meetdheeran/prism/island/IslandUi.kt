@@ -2,6 +2,10 @@ package com.meetdheeran.prism.island
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Brush
 import com.meetdheeran.prism.assistant.Haptics
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.lerp
@@ -224,6 +228,8 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     val shutH = sizeOf(Mode.MEDIA).height
     val openH = sizeOf(Mode.EXPANDED).height
     val open = if ((mode == Mode.MEDIA || mode == Mode.EXPANDED) && openH > shutH) (h - shutH) / (openH - shutH) else 0f
+    // The cover's own colour (like the iPhone): a light under the open card, and in the Glass look its bars and progress.
+    val tint = remember(state.media?.art) { coverColor(state.media?.art) }
 
     // Jelly touch: the island gives a little under the finger (from its top edge, where the tab hangs), wobbles back
     // when the finger lets go, and ticks; a card opening or closing clicks.
@@ -326,6 +332,20 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                     }, Color.Black)
                 }
             }
+            if (open > 0.02f && tint != null) {
+                // Drawn under the island: only what spills out below the black card shows, a soft light in the cover's
+                // colour (gentler in the Nothing look, whose island stays black and white).
+                Canvas(Modifier.matchParentSize()) {
+                    val o = open.coerceIn(0f, 1f)
+                    val rx = w.toPx() * 0.46f
+                    val ry = 30.dp.toPx()
+                    val c = Offset((side + dx).toPx() + w.toPx() / 2, h.toPx() - 8.dp.toPx())
+                    val strength = if (Appearance.nothing) 0.34f else 0.55f
+                    withTransform({ scale(1f, ry / rx, c) }) {
+                        drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = strength * o), Color.Transparent), center = c, radius = rx), radius = rx, center = c)
+                    }
+                }
+            }
             if (splitting) {
                 val gooey = remember(density) { gooeyEffect(with(density) { 7.dp.toPx() }) }
                 Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = gooey }) {
@@ -342,7 +362,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                 }
             }
             Box(Modifier.offset(x = side + dx)) {
-                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, open, cam, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, open, cam, tint, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
             }
             if (splitting) {
                 shown.forEachIndexed { i, live ->
@@ -430,7 +450,7 @@ private fun MiniChrono(baseWallMs: Long, countDown: Boolean) {
 private fun PillBody(
     state: IslandState, mode: Mode, act: LiveActivity?, currentKey: String?, keys: List<String>,
     w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
-    sizeOf: (Mode) -> DpSize, topOf: (Mode) -> androidx.compose.ui.unit.Dp, open: Float, cam: androidx.compose.ui.unit.Dp,
+    sizeOf: (Mode) -> DpSize, topOf: (Mode) -> androidx.compose.ui.unit.Dp, open: Float, cam: androidx.compose.ui.unit.Dp, tint: Color?,
     shape: androidx.compose.ui.graphics.Shape, lensMode: Boolean, lensRegistry: LensRegistry, radiusPx: Float, fallback: Bitmap,
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
     onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onAskClose: () -> Unit, onAskMore: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
@@ -482,18 +502,30 @@ private fun PillBody(
                         },
                     ) { change, dy -> change.consume(); pulled += dy }
                 }
-                .pointerInput(keys, currentKey) {
-                    // Swipe sideways: the next live thing takes the island (HyperOS-style).
+                .pointerInput(keys, currentKey, mode) {
+                    // Swipe sideways: on the open music card, the song follows the finger and a long enough swipe skips
+                    // (left: next, right: back), the next one sliding in from the other side; otherwise the next live
+                    // thing takes the island (HyperOS-style).
                     var dx = 0f
+                    val card = mode == Mode.EXPANDED
                     detectHorizontalDragGestures(
                         onDragStart = { dx = 0f },
                         onDragEnd = {
-                            if (keys.size > 1 && abs(dx) > 32.dp.toPx()) {
+                            if (card) {
+                                val skip = abs(dx) > 48.dp.toPx()
+                                if (skip) { if (dx < 0) MediaWatcher.next() else MediaWatcher.previous() }
+                                tapScope.launch { MusicSwipe.settle(skip, dx < 0, 70.dp.toPx()) }
+                            } else if (keys.size > 1 && abs(dx) > 32.dp.toPx()) {
                                 val i = keys.indexOf(currentKey).coerceAtLeast(0)
                                 onFocus(keys[(i + (if (dx < 0) 1 else -1) + keys.size) % keys.size])
                             }
                         },
-                    ) { change, d -> change.consume(); dx += d }
+                        onDragCancel = { if (card) tapScope.launch { MusicSwipe.settle(false, false, 0f) } },
+                    ) { change, d ->
+                        change.consume()
+                        dx += d
+                        if (card) MusicSwipe.x = dx * 0.55f
+                    }
                 }
                 .pointerInput(mode) {
                     detectTapGestures(
@@ -550,7 +582,7 @@ private fun PillBody(
                 ) {
                     when (m) {
                         Mode.EMPTY -> Box(Modifier.fillMaxSize())
-                        Mode.MEDIA, Mode.EXPANDED -> state.media?.let { MusicMorph(it, open, sizeOf(Mode.MEDIA), cam) }
+                        Mode.MEDIA, Mode.EXPANDED -> state.media?.let { MusicMorph(it, open, sizeOf(Mode.MEDIA), cam, tint) }
                         Mode.CHARGING -> Charging(state.battery)
                         Mode.EVENT -> state.event?.let { EventRow(it) }
                         Mode.CALL -> act?.let { if (state.notch) CallSplit(it, state.cutWidthDp.dp) else CallRow(it) }
@@ -948,24 +980,43 @@ private fun Chrono(baseWallMs: Long, countDown: Boolean) {
  * progress rise in as the card opens. Laid out at the open card's size; the island's shape shows what fits.
  */
 @Composable
-private fun MusicMorph(np: NowPlaying, open: Float, small: DpSize, cam: androidx.compose.ui.unit.Dp) {
+private fun MusicMorph(np: NowPlaying, open: Float, small: DpSize, cam: androidx.compose.ui.unit.Dp, tint: Color?) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val o = open.coerceIn(0f, 1f)
         val left = (maxWidth - small.width) / 2
         Art(
             np, lerp(20.dp, 44.dp, o), RoundedCornerShape(10.dp),
-            Modifier.offset(lerp(left + 8.dp, 16.dp, o), lerp((small.height - 20.dp) / 2, cam + 6.dp, o)),
+            Modifier
+                .offset(lerp(left + 8.dp, 16.dp, o), lerp((small.height - 20.dp) / 2, cam + 6.dp, o))
+                .graphicsLayer { swiped(MusicSwipe.x, size.width * 3) },
         )
-        AudioBars(np.isPlaying, modifier = Modifier.offset(left + small.width - 30.dp, (small.height - 16.dp) / 2))
+        AudioBars(np.isPlaying, color = if (Appearance.nothing) Ink.cyan else tint ?: Ink.cyan, modifier = Modifier.offset(left + small.width - 30.dp, (small.height - 16.dp) / 2))
         val reveal = ((open - 0.3f) / 0.5f).coerceIn(0f, 1f)
-        if (reveal > 0f) MusicCard(np, reveal, Modifier.padding(top = cam))
+        if (reveal > 0f) MusicCard(np, reveal, tint, Modifier.padding(top = cam))
+    }
+}
+
+/** The song being swiped: it follows the finger, fading as it goes. */
+private fun androidx.compose.ui.graphics.GraphicsLayerScope.swiped(x: Float, fadeOver: Float) {
+    translationX = x
+    alpha = (1f - abs(x) / fadeOver).coerceIn(0f, 1f)
+}
+
+/** How far the open music card's song is swiped (px), shared by the island's drag and the card. */
+private object MusicSwipe {
+    var x by mutableFloatStateOf(0f)
+
+    /** Let go: back to its place — or, when it skipped, the next song slides in from the other side. */
+    suspend fun settle(skipped: Boolean, toLeft: Boolean, from: Float) {
+        if (skipped) x = if (toLeft) from else -from
+        androidx.compose.animation.core.animate(x, 0f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)) { v, _ -> x = v }
     }
 }
 
 /** The open card's words, buttons and progress (the cover is MusicMorph's), coming in with [reveal]. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MusicCard(np: NowPlaying, reveal: Float, modifier: Modifier) {
+private fun MusicCard(np: NowPlaying, reveal: Float, tint: Color?, modifier: Modifier) {
     var tick by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(np.isPlaying) { while (true) { delay(500); tick = SystemClock.elapsedRealtime() } }
     val pos = np.livePosition(tick)
@@ -980,8 +1031,9 @@ private fun MusicCard(np: NowPlaying, reveal: Float, modifier: Modifier) {
             Spacer(Modifier.width(12.dp))
             Column(
                 Modifier.weight(1f).graphicsLayer {
-                    alpha = reveal
-                    translationX = (1f - reveal) * -14.dp.toPx()
+                    swiped(MusicSwipe.x, size.width)
+                    alpha *= reveal
+                    translationX += (1f - reveal) * -14.dp.toPx()
                 },
             ) {
                 Text(np.title, style = PrismTypography.titleSmall, color = Color.White, maxLines = 1, modifier = Modifier.basicMarquee())
@@ -1012,15 +1064,81 @@ private fun MusicCard(np: NowPlaying, reveal: Float, modifier: Modifier) {
             },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(fmt(pos), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
+            // Drag along the bar (or tap it) to jump in the song; it thickens under the finger.
+            var scrub by remember { mutableStateOf<Float?>(null) }
+            val at = scrub ?: frac
+            val shownPos = if (scrub != null) (at * np.durationMs).toLong() else pos
+            val thick by animateDpAsState(if (scrub != null) 8.dp else 4.dp, label = "thick")
+            val times = PrismTypography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp)
+            Text(fmt(shownPos), style = times, color = if (scrub != null) Color.White else Ink.tertiary)
             Spacer(Modifier.width(8.dp))
-            Box(Modifier.weight(1f).height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f))) {
-                Box(Modifier.fillMaxWidth(frac).height(4.dp).background(Color.White))
+            val fill = if (Appearance.nothing) Color.White else tint ?: Color.White
+            Canvas(
+                Modifier
+                    .weight(1f)
+                    .height(22.dp)
+                    .pointerInput(np.durationMs) {
+                        if (np.durationMs <= 0) return@pointerInput
+                        fun x(px: Float) = (px / size.width).coerceIn(0f, 1f)
+                        detectHorizontalDragGestures(
+                            onDragStart = { o -> scrub = x(o.x) },
+                            onDragEnd = {
+                                scrub?.let { MediaWatcher.seekTo((it * np.durationMs).toLong()) }
+                                scrub = null
+                            },
+                            onDragCancel = { scrub = null },
+                        ) { change, _ ->
+                            change.consume()
+                            scrub = x(change.position.x)
+                        }
+                    }
+                    .pointerInput(np.durationMs) {
+                        if (np.durationMs <= 0) return@pointerInput
+                        detectTapGestures { o -> MediaWatcher.seekTo(((o.x / size.width).coerceIn(0f, 1f) * np.durationMs).toLong()) }
+                    },
+            ) {
+                val t = thick.toPx()
+                val y = size.height / 2
+                drawLine(Color.White.copy(alpha = 0.2f), Offset(t / 2, y), Offset(size.width - t / 2, y), t, StrokeCap.Round)
+                val end = t / 2 + (size.width - t) * at
+                drawLine(fill, Offset(t / 2, y), Offset(end, y), t, StrokeCap.Round)
+                // Nothing's one signal colour heads the line.
+                if (Appearance.nothing) drawCircle(NothingPalette.Red, t * 0.9f, Offset(end, y))
             }
             Spacer(Modifier.width(8.dp))
-            Text("-" + fmt((np.durationMs - pos).coerceAtLeast(0)), fontSize = 10.sp, lineHeight = 12.sp, color = Ink.tertiary)
+            Text("-" + fmt((np.durationMs - shownPos).coerceAtLeast(0)), style = times, color = Ink.tertiary)
         }
     }
+}
+
+/**
+ * The cover's liveliest colour, lifted so it glows on black: the most colourful hue among its brighter pixels
+ * (weighted by how colourful and bright each is), or null for a grey cover.
+ */
+private fun coverColor(art: Bitmap?): Color? {
+    art ?: return null
+    val small = runCatching { Bitmap.createScaledBitmap(art, 24, 24, true) }.getOrNull() ?: return null
+    val weight = FloatArray(12)
+    val sums = Array(12) { FloatArray(3) }
+    val hsv = FloatArray(3)
+    for (y in 0 until small.height) for (x in 0 until small.width) {
+        val c = small.getPixel(x, y)
+        android.graphics.Color.colorToHSV(c, hsv)
+        if (hsv[1] < 0.25f || hsv[2] < 0.25f) continue
+        val b = (hsv[0] / 30f).toInt().coerceIn(0, 11)
+        val wgt = hsv[1] * hsv[2]
+        weight[b] += wgt
+        sums[b][0] += android.graphics.Color.red(c) * wgt
+        sums[b][1] += android.graphics.Color.green(c) * wgt
+        sums[b][2] += android.graphics.Color.blue(c) * wgt
+    }
+    val best = weight.indices.maxByOrNull { weight[it] } ?: return null
+    if (weight[best] < 4f) return null
+    val w = weight[best]
+    android.graphics.Color.RGBToHSV((sums[best][0] / w).toInt(), (sums[best][1] / w).toInt(), (sums[best][2] / w).toInt(), hsv)
+    hsv[1] = hsv[1].coerceIn(0.45f, 0.85f)
+    hsv[2] = hsv[2].coerceAtLeast(0.9f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
 private fun fmt(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(s / 60, s % 60) }
