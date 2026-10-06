@@ -56,6 +56,7 @@ class PrismNotificationListener : NotificationListenerService() {
             icon = icon,
             postedAt = sbn.postTime,
             contentIntent = n.contentIntent,
+            largeIcon = runCatching { n.getLargeIcon()?.loadDrawable(this)?.toBitmap(96, 96) }.getOrNull(),
         )
         val isUpdate = shade.containsKey(sbn.key)
         shade[sbn.key] = item
@@ -158,4 +159,6 @@ data class ShadeItem(
     val icon: Bitmap?,
     val postedAt: Long,
     val contentIntent: android.app.PendingIntent?,
+    /** The sender's photo (a chat app's contact picture), when the notification has one. */
+    val largeIcon: Bitmap? = null,
 )

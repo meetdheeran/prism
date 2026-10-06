@@ -145,7 +145,7 @@ import com.meetdheeran.prism.ui.siri.Phase
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onAskClose: () -> Unit = {}, onAskMore: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}, onHitArea: (androidx.compose.ui.geometry.Rect) -> Unit = {}) {
+fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Unit = {}, onOpen: (String) -> Unit = {}, onAskClose: () -> Unit = {}, onAskMore: () -> Unit = {}, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit = {}, onAgentStop: () -> Unit = {}, onAgentAnswer: (Boolean) -> Unit = {}, onAgentTap: () -> Unit = {}, onAgentResultTap: () -> Unit = {}, onHitArea: (androidx.compose.ui.geometry.Rect) -> Unit = {}, onPeekDismiss: () -> Unit = {}) {
     val backdrop = rememberBackdropState()
     // Everything live at once (HyperOS-style): one shows in the island, up to two more wait in bubbles beside it;
     // swipe the island sideways to switch, pull it down to open that app.
@@ -191,7 +191,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     fun under(m: Mode) = tab && !(m == Mode.EMPTY || m == Mode.MEDIA || m == Mode.CALL || m == Mode.ACTIVITY || m == Mode.PROGRESS || m == Mode.CHARGE_LIVE)
     /** How big the island is when it shows [m]; each look is also laid out at this size (see [PillBody]). */
     fun sizeOf(m: Mode) = DpSize(
-        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 150.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 360.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
+        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 150.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> 340.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 360.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
         when (m) {
             Mode.ASK -> cam + (if (askLines == 0) 46.dp else 64.dp + 20.dp * askLines)
             Mode.EXPANDED -> 86.dp + cam
@@ -200,11 +200,20 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
             Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines + cam
             Mode.UNLOCK, Mode.FACE -> if (tab) cam + 52.dp else baseH + 34.dp
             Mode.CHARGING -> if (tab) cam + 36.dp else baseH + 6.dp
+            Mode.PEEK -> if (tab) cam + 58.dp else baseH + 22.dp
             else -> if (under(m)) cam + 30.dp else baseH
         },
     )
     val below = under(mode)
-    val target = sizeOf(mode)
+    // Liquid drop: in the notch, a notification (or an event) first drips out — a drop on a stretchy neck — and the
+    // card grows out of it; the island keeps the size it had until the drop has fallen.
+    val dripMode = tab && (mode == Mode.PEEK || mode == Mode.EVENT)
+    val dripKey = if (!dripMode) 0L else if (mode == Mode.PEEK) state.peekAt else state.event?.at ?: 0L
+    val drip = remember(dripKey) { androidx.compose.animation.core.Animatable(if (dripKey != 0L) 0f else 1f) }
+    LaunchedEffect(drip) { if (drip.value < 1f) drip.animateTo(1f, tween(DRIP_MS, easing = LinearEasing)) }
+    val lastLook = remember { arrayOf(Mode.EMPTY) }
+    if (!dripMode) lastLook[0] = mode
+    val target = sizeOf(if (dripMode && drip.value < DRIP_FALL) lastLook[0] else mode)
     val targetW = target.width
     val targetH = target.height
     val islandSpring = spring<androidx.compose.ui.unit.Dp>(dampingRatio = 0.66f, stiffness = 380f * Appearance.islandSpeed * Appearance.islandSpeed)
@@ -222,7 +231,8 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
         hold[1] = maxOf(hold[1], targetH.value, h.value)
     }
     val spanW = hold[0].dp
-    val spanH = hold[1].dp
+    // Room for the falling drop below the island while it drips.
+    val spanH = maxOf(hold[1].dp, if (dripMode && drip.value < 1f) cam + 44.dp else 0.dp)
     val dx = (spanW - w) / 2
     val big = mode == Mode.EXPANDED || mode == Mode.AGENT_CONFIRM || mode == Mode.AGENT_PANEL || mode == Mode.AGENT_RESULT || mode == Mode.ASK
     val corner by animateDpAsState(when { big -> 32.dp; mode == Mode.UNLOCK || mode == Mode.FACE -> 26.dp; else -> baseH / 2 }, islandSpring, label = "corner")
@@ -337,6 +347,33 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                     }, Color.Black)
                 }
             }
+            // Depth: open cards cast a soft shadow on the app below, so they float over it.
+            val depth by animateFloatAsState(if (big) 1f else 0f, tween(300), label = "depth")
+            if (depth > 0.01f) {
+                Canvas(Modifier.matchParentSize()) {
+                    val rx = w.toPx() * 0.52f
+                    val ry = 24.dp.toPx()
+                    val c = Offset((side + dx).toPx() + w.toPx() / 2, h.toPx() - 6.dp.toPx())
+                    withTransform({ scale(1f, ry / rx, c) }) {
+                        drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.5f * depth), Color.Transparent), center = c, radius = rx), radius = rx, center = c)
+                    }
+                }
+            }
+            if (dripMode && drip.value < 1f) {
+                val goo = remember(density) { gooeyEffect(with(density) { 7.dp.toPx() }) }
+                Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = goo }) {
+                    val d = drip.value
+                    val left = (side + dx).toPx()
+                    // The tab it drips from (its top corners above the screen edge, as in the split).
+                    drawRoundRect(Color.Black, Offset(left, -h.toPx() / 2), Size(w.toPx(), h.toPx() * 1.5f), CornerRadius(h.toPx() / 2))
+                    val fall = FastOutSlowInEasing.transform((d / DRIP_FALL).coerceIn(0f, 1f))
+                    val y0 = h.toPx() * 0.55f
+                    val y = y0 + ((cam + 24.dp).toPx() - y0) * fall
+                    // The drop grows as it falls, then the card swallows it.
+                    val r = (4.dp.toPx() + 8.dp.toPx() * fall) * (1f - ((d - 0.8f) / 0.2f).coerceIn(0f, 1f))
+                    if (r > 0.5f) drawCircle(Color.Black, r, Offset(left + w.toPx() / 2, y))
+                }
+            }
             if (open > 0.02f && tint != null) {
                 // Drawn under the island: only what spills out below the black card shows, a soft light in the cover's
                 // colour (gentler in the Nothing look, whose island stays black and white).
@@ -367,7 +404,25 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
                 }
             }
             Box(Modifier.offset(x = side + dx)) {
-                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, open, cam, tint, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap)
+                PillBody(state, mode, act, current?.key, items.map { it.key }, w, h, { m -> sizeOf(m) }, { m -> if (under(m)) cam else 0.dp }, open, cam, tint, shape, lensMode, lensRegistry, radiusPx, fallback, backdrop, splitting, onTap, onFocus, onOpen, onAskClose, onAskMore, onToggleExpand, onAssistant, onActivityTap, onPeekTap, onAgentStop, onAgentAnswer, onAgentTap, onAgentResultTap, onPeekDismiss)
+            }
+            // Glyph flash: when a notification lands (or the cable goes in), a light runs once around the island's
+            // edge — down one side, along the bottom, up the other in the notch.
+            val flashKey = when (mode) {
+                Mode.PEEK -> state.peekAt
+                Mode.CHARGING -> state.chargedAt
+                else -> 0L
+            }
+            val flash = remember(flashKey) { androidx.compose.animation.core.Animatable(if (flashKey != 0L) 0f else 1f) }
+            LaunchedEffect(flash) {
+                if (flash.value < 1f) {
+                    delay(FLASH_DELAY_MS)
+                    flash.animateTo(1f, tween(900, easing = LinearEasing))
+                }
+            }
+            if (flash.value > 0.001f && flash.value < 0.999f) {
+                val glyph = if (mode == Mode.CHARGING) Ink.good else Ink.cyan
+                Canvas(Modifier.matchParentSize()) { glyphFlash(flash.value, (side + dx).toPx(), w.toPx(), h.toPx(), corner.toPx(), tab, glyph) }
             }
             if (splitting) {
                 shown.forEachIndexed { i, live ->
@@ -428,6 +483,49 @@ private fun BubbleIcon(live: Live, state: IslandState, size: androidx.compose.ui
     }
 }
 
+/** How far the liquid drop's fall is (of its whole run) before the card starts growing out of it. */
+private const val DRIP_FALL = 0.38f
+private const val DRIP_MS = 700
+private const val FLASH_DELAY_MS = 380L
+
+/**
+ * A comet of light along the island's edge at [t] (0 → 1): in the notch down the left side, along the bottom and up
+ * the right (the top is the screen's edge); out of it, all the way round. A bright head, a fading tail, a soft glow.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.glyphFlash(t: Float, left: Float, width: Float, height: Float, corner: Float, tab: Boolean, color: Color) {
+    val r = left + width
+    val c = corner.coerceAtMost(minOf(width, height) / 2)
+    val path = androidx.compose.ui.graphics.Path()
+    if (tab) {
+        path.moveTo(left, 0f)
+        path.lineTo(left, height - c)
+        path.arcTo(androidx.compose.ui.geometry.Rect(left, height - 2 * c, left + 2 * c, height), 180f, -90f, false)
+        path.lineTo(r - c, height)
+        path.arcTo(androidx.compose.ui.geometry.Rect(r - 2 * c, height - 2 * c, r, height), 90f, -90f, false)
+        path.lineTo(r, 0f)
+    } else {
+        path.addRoundRect(androidx.compose.ui.geometry.RoundRect(left, 0f, r, height, CornerRadius(c)))
+    }
+    val measure = androidx.compose.ui.graphics.PathMeasure()
+    measure.setPath(path, false)
+    val length = measure.length
+    if (length <= 0f) return
+    val tail = length * 0.3f
+    val head = t * (length + tail)
+    val piece = androidx.compose.ui.graphics.Path()
+    val steps = 8
+    for (k in 0 until steps) {
+        val to = (head - tail * k / steps).coerceIn(0f, length)
+        val from = (head - tail * (k + 1) / steps).coerceIn(0f, length)
+        if (to - from < 0.5f) continue
+        piece.reset()
+        measure.getSegment(from, to, piece, true)
+        val a = 1f - k.toFloat() / steps
+        drawPath(piece, color.copy(alpha = 0.22f * a), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(piece, color.copy(alpha = a), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round))
+    }
+}
+
 /** Blur, then push alpha through a steep ramp: soft blobs become one hard shape with liquid necks. */
 private fun gooeyEffect(blurPx: Float): androidx.compose.ui.graphics.RenderEffect {
     val threshold = android.graphics.ColorMatrix(floatArrayOf(
@@ -460,6 +558,7 @@ private fun PillBody(
     backdrop: com.meetdheeran.prism.ui.glass.BackdropState, bare: Boolean,
     onTap: () -> Unit, onFocus: (String) -> Unit, onOpen: (String) -> Unit, onAskClose: () -> Unit, onAskMore: () -> Unit, onToggleExpand: () -> Unit, onAssistant: () -> Unit, onActivityTap: (LiveActivity) -> Unit, onPeekTap: (ShadeItem) -> Unit,
     onAgentStop: () -> Unit, onAgentAnswer: (Boolean) -> Unit, onAgentTap: () -> Unit, onAgentResultTap: () -> Unit,
+    onPeekDismiss: () -> Unit,
 ) {
     val tapScope = rememberCoroutineScope()
     val tapClock = remember { longArrayOf(0L) }
@@ -503,6 +602,9 @@ private fun PillBody(
                                     Mode.PEEK -> state.peek?.let(onPeekTap)
                                     else -> currentKey?.let(onOpen)
                                 }
+                            } else if (pulled < -24.dp.toPx() && mode == Mode.PEEK) {
+                                // Push a notification back up into the notch: it's put away.
+                                onPeekDismiss()
                             }
                         },
                     ) { change, dy -> change.consume(); pulled += dy }
@@ -601,7 +703,7 @@ private fun PillBody(
                         Mode.AGENT_PANEL -> AgentPanelCard(state.agent, onStop = onAgentStop, onHide = onAgentTap)
                         Mode.UNLOCK -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { UnlockGlyph() }
                         Mode.FACE -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FaceScanGlyph(state.face) }
-                        Mode.PEEK -> state.peek?.let { PeekRow(it) }
+                        Mode.PEEK -> state.peek?.let { if (state.notch) PeekCard(it) else PeekRow(it) }
                         Mode.ASK -> state.ask?.let { AskCard(it) }
                     }
                 }
@@ -850,6 +952,47 @@ private fun AiRow(phase: Phase, level: Float) {
         Text(if (Appearance.nothing) label.uppercase() else label, style = PrismTypography.labelMedium, color = Color.White, maxLines = 1)
         Spacer(Modifier.weight(1f))
         if (phase == Phase.Listening) Canvas(Modifier.size(7.dp)) { drawCircle(if (Appearance.nothing) NothingPalette.Red else Color(0xFFFF453A)) }
+    }
+}
+
+/**
+ * A notification, iPhone-style, under the camera: who (the sender's photo when the app gives one, with the app's
+ * badge; else the app's icon), the app, and the first line. Tap or pull down opens it; push it up to put it away.
+ */
+@Composable
+private fun PeekCard(n: ShadeItem) {
+    val nothing = Appearance.nothing
+    Row(Modifier.fillMaxSize().padding(start = 12.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(38.dp)) {
+            val face = n.largeIcon
+            Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.White.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                if (face != null) {
+                    Image(face.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    n.icon?.let { Image(it.asImageBitmap(), n.appLabel, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White), modifier = Modifier.size(19.dp)) }
+                }
+            }
+            if (face != null && n.icon != null) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp).size(17.dp).clip(CircleShape).background(Color(0xFF2A2A2A)),
+                    contentAlignment = Alignment.Center,
+                ) { Image(n.icon.asImageBitmap(), null, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White), modifier = Modifier.size(10.dp)) }
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    n.title.ifBlank { n.appLabel }, style = PrismTypography.titleSmall, color = Color.White, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (nothing) n.appLabel.uppercase() else n.appLabel, style = PrismTypography.labelSmall, color = Ink.tertiary, maxLines = 1)
+            }
+            if (n.text.isNotBlank()) {
+                Text(n.text, style = PrismTypography.bodySmall, color = Ink.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }
 

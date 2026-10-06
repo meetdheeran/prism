@@ -547,6 +547,7 @@ class IslandService : Service() {
                             onAgentTap = { setAgentPanel(!state.value.agentPanel) },
                             onAgentResultTap = { openAgentConversation() },
                             onHitArea = { r -> placePad(r) },
+                        onPeekDismiss = { peeks.value = null to 0L },
                         )
                     }
                 }
