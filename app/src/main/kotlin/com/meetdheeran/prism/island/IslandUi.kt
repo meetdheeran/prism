@@ -2,6 +2,10 @@ package com.meetdheeran.prism.island
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.StrokeCap
@@ -187,7 +191,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
     fun under(m: Mode) = tab && !(m == Mode.EMPTY || m == Mode.MEDIA || m == Mode.CALL || m == Mode.ACTIVITY || m == Mode.PROGRESS || m == Mode.CHARGE_LIVE)
     /** How big the island is when it shows [m]; each look is also laid out at this size (see [PillBody]). */
     fun sizeOf(m: Mode) = DpSize(
-        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 86.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 360.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
+        when (m) { Mode.EMPTY -> base; Mode.MEDIA -> base + 64.dp; Mode.CHARGING -> base + 150.dp; Mode.CHARGE_LIVE -> base + 100.dp; Mode.PROGRESS -> base + 120.dp; Mode.EVENT -> base + 124.dp; Mode.CALL, Mode.ACTIVITY -> base + 100.dp; Mode.AI -> base + 116.dp; Mode.PEEK -> base + 176.dp; Mode.AGENT -> base + 150.dp; Mode.UNLOCK, Mode.FACE -> base + 12.dp; Mode.EXPANDED -> 360.dp; Mode.AGENT_CONFIRM, Mode.AGENT_PANEL, Mode.AGENT_RESULT -> 348.dp; Mode.ASK -> 320.dp },
         when (m) {
             Mode.ASK -> cam + (if (askLines == 0) 46.dp else 64.dp + 20.dp * askLines)
             Mode.EXPANDED -> 86.dp + cam
@@ -195,6 +199,7 @@ fun IslandUi(state: IslandState, onTap: () -> Unit = {}, onFocus: (String) -> Un
             Mode.AGENT_PANEL -> 176.dp + cam
             Mode.AGENT_RESULT -> 74.dp + 22.dp * resultLines + cam
             Mode.UNLOCK, Mode.FACE -> if (tab) cam + 52.dp else baseH + 34.dp
+            Mode.CHARGING -> if (tab) cam + 36.dp else baseH + 6.dp
             else -> if (under(m)) cam + 30.dp else baseH
         },
     )
@@ -583,7 +588,7 @@ private fun PillBody(
                     when (m) {
                         Mode.EMPTY -> Box(Modifier.fillMaxSize())
                         Mode.MEDIA, Mode.EXPANDED -> state.media?.let { MusicMorph(it, open, sizeOf(Mode.MEDIA), cam, tint) }
-                        Mode.CHARGING -> Charging(state.battery)
+                        Mode.CHARGING -> ChargeMoment(state.battery)
                         Mode.EVENT -> state.event?.let { EventRow(it) }
                         Mode.CALL -> act?.let { if (state.notch) CallSplit(it, state.cutWidthDp.dp) else CallRow(it) }
                         Mode.ACTIVITY -> act?.let { if (state.notch) ActivitySplit(it, state.cutWidthDp.dp) else ActivityRow(it) }
@@ -873,14 +878,30 @@ private fun Art(np: NowPlaying, size: androidx.compose.ui.unit.Dp, shape: androi
 private fun AudioBars(playing: Boolean, color: Color = Ink.cyan, modifier: Modifier = Modifier) {
     val inf = rememberInfiniteTransition(label = "bars")
     val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "t")
+    // While music plays, the bars follow the real sound (bass on the left, treble on the right) when Android allows it.
+    val ctx = LocalContext.current
+    var live by remember { mutableStateOf(false) }
+    DisposableEffect(playing) {
+        live = playing && Beat.hold(ctx)
+        onDispose {
+            if (live) Beat.release()
+            live = false
+        }
+    }
+    fun level(i: Int, phase: Float): Float = when {
+        !playing -> 0.25f
+        live -> 0.12f + 0.88f * Beat.levels[i.coerceIn(0, Beat.BANDS - 1)]
+        else -> 0.3f + 0.7f * ((sin(phase) + 1f) / 2f)
+    }
     if (Appearance.nothing) {
         // Dot-matrix equaliser: four columns of four dots, lit from the bottom.
         Canvas(modifier.width(22.dp).height(16.dp)) {
             val cols = 4; val rows = 4
             val cw = size.width / cols; val rh = size.height / rows
             val r = minOf(cw, rh) * 0.32f
+            if (live) Beat.frame
             for (i in 0 until cols) {
-                val frac = if (playing) 0.3f + 0.7f * ((sin(t * 6.283f + i * 1.3f) + 1f) / 2f) else 0.25f
+                val frac = level(i, t * 6.283f + i * 1.3f)
                 val lit = (frac * rows).toInt().coerceIn(1, rows)
                 for (j in 0 until rows) {
                     val on = (rows - 1 - j) < lit
@@ -894,23 +915,59 @@ private fun AudioBars(playing: Boolean, color: Color = Ink.cyan, modifier: Modif
         val n = 4
         val gap = 2.dp.toPx()
         val bw = (size.width - gap * (n - 1)) / n
+        if (live) Beat.frame
         for (i in 0 until n) {
-            val phase = t * 6.283f + i * 1.3f
-            val frac = if (playing) 0.3f + 0.7f * ((sin(phase) + 1f) / 2f) else 0.25f
+            val frac = level(i, t * 6.283f + i * 1.3f)
             val bh = size.height * frac
             drawRoundRect(color, topLeft = androidx.compose.ui.geometry.Offset(i * (bw + gap), size.height - bh), size = androidx.compose.ui.geometry.Size(bw, bh), cornerRadius = androidx.compose.ui.geometry.CornerRadius(bw / 2))
         }
     }
 }
 
+/**
+ * Plugging in, for three seconds: a row of Glyph dots fills up to the battery level as the percentage counts up (in
+ * dot-matrix figures in the Nothing look), the head dot breathing and the bolt pulsing — then the island settles
+ * into the small charging dots.
+ */
 @Composable
-private fun Charging(b: BatteryInfo) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Rounded.Bolt, null, tint = Ink.good, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("Charging", style = PrismTypography.labelMedium, color = Color.White)
-        Spacer(Modifier.weight(1f))
-        Text(if (b.percent >= 0) "${b.percent}%" else "", style = PrismTypography.labelMedium, color = Ink.good)
+private fun ChargeMoment(b: BatteryInfo) {
+    val fill = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { fill.animateTo(1f, tween(1_100, easing = FastOutSlowInEasing)) }
+    val inf = rememberInfiniteTransition(label = "charge")
+    val pulse by inf.animateFloat(0.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
+    val percent = b.percent.coerceAtLeast(0)
+    val shown = (percent * fill.value).roundToInt()
+    val nothing = Appearance.nothing
+    Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Rounded.Bolt, null, tint = Ink.good,
+            modifier = Modifier.size(18.dp).graphicsLayer {
+                val sc = 0.9f + 0.15f * pulse
+                scaleX = sc
+                scaleY = sc
+            },
+        )
+        Spacer(Modifier.width(10.dp))
+        Canvas(Modifier.weight(1f).height(10.dp)) {
+            val n = 14
+            val step = size.width / n
+            val r = 2.6.dp.toPx()
+            val lit = percent / 100f * fill.value * n
+            for (i in 0 until n) {
+                val a = when {
+                    i + 1 <= lit -> 1f
+                    i < lit -> 0.3f + 0.7f * pulse
+                    else -> 0.18f
+                }
+                drawCircle(Ink.good.copy(alpha = a), r, Offset(step * (i + 0.5f), size.height / 2))
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "$shown%",
+            style = if (nothing) TextStyle(fontFamily = NothingFonts.Dot, fontWeight = FontWeight.Bold, fontSize = 17.sp) else PrismTypography.labelLarge,
+            color = Ink.good, maxLines = 1,
+        )
     }
 }
 

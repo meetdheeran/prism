@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Voice input. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- The island's bars follow the music through Android's visualiser on the output mix, which needs this (normal). -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Brightness / rotation tiles (user grants via Settings). -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <!-- DND tile (user grants via Settings). -->
